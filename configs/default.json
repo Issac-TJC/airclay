@@ -1,0 +1,10 @@
+{
+  "host": "127.0.0.1", "port": 8765,
+  "dominant": "Right", "fps": 30, "camera": 0,
+  "model_path": "assets/hand_landmarker.task",
+  "pinch_close": 0.30, "pinch_open": 0.45,
+  "combo_ms": 200, "loss_ms": 300, "intent_ms": 100,
+  "confidence": 0.60, "smoothing": 0.45,
+  "radius": 0.25, "radius_min": 0.08, "radius_max": 0.60,
+  "max_displacement": 0.5, "history_limit": 30
+}

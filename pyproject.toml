@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "airclay"
+version = "0.1.0"
+description = "Two-hand intent recognition and Blender surface sculpting"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "numpy==1.26.4", "mediapipe==0.10.21", "opencv-contrib-python==4.11.0.86",
+  "torch>=2.5,<3", "scikit-learn>=1.5,<2", "matplotlib>=3.9,<4"
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10"]
+
+[project.scripts]
+airclay = "airclay.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["blender: requires Blender runtime"]
