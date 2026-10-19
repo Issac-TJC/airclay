@@ -138,7 +138,8 @@ def replay(args,cfg):
                 import numpy as np
                 from .tracking.camera import preview
                 canvas=np.full((480,640,3),25,dtype=np.uint8)
-                if preview(canvas,frame,f"Replay | {pipeline.controller.mode} | Q: stop") in (ord("q"),27):
+                mode = cfg.get("preview_profile", "hover2d") if pipeline.preview_only else pipeline.controller.mode
+                if preview(canvas,frame,f"Replay | {mode} | Q: stop") in (ord("q"),27):
                     break
     finally:
         sender.close()

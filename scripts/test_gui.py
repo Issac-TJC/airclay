@@ -3,6 +3,7 @@
 Creates its own scene and port. Leaves the saved demo open for visual inspection.
 """
 import json
+import os
 import sys
 import time
 import traceback
@@ -23,6 +24,8 @@ cfg=config(); cfg["port"]=8766
 frames,_=demo_frames()
 state={"index":0,"start":None,"phase":"init"}
 report={"synthetic":True,"passed":False}
+OUTPUT=Path(os.environ.get("AIRCLAY_TEST_OUTPUT_DIR", str(ROOT/"runs")))
+OUTPUT.mkdir(parents=True,exist_ok=True)
 
 
 def finish(error=None):
@@ -32,8 +35,10 @@ def finish(error=None):
         state["sender"].close()
     if addon._runtime:
         addon._runtime.settings.running=False
-    (ROOT/"runs/gui_test.json").write_text(json.dumps(report,indent=2))
+    (OUTPUT/"gui_test.json").write_text(json.dumps(report,indent=2))
     print("AIRCLAY_GUI_TEST",json.dumps(report),flush=True)
+    if "--quit" in sys.argv:
+        bpy.ops.wm.quit_blender()
 
 
 def step():
@@ -132,7 +137,7 @@ def run():
         report["transport_apply_ms_median"]=float(np.median([r["transport_apply_ms"] for r in runtime.metrics]))
         report["elapsed_seconds"]=time.monotonic()-state["start"]
         with bpy.context.temp_override(**state["context"]):
-            bpy.ops.wm.save_as_mainfile(filepath=str(ROOT/"runs/airclay_demo.blend"))
+            bpy.ops.wm.save_as_mainfile(filepath=str(OUTPUT/"airclay_demo.blend"))
         finish()
         return None
 

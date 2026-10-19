@@ -13,6 +13,9 @@ class Pipeline:
         self.reset()
 
     def reset(self):
+        self.preview_only = self.cfg.get("interaction_version", 1) == 2
+        if self.preview_only and self.backend != "rules":
+            raise ValueError("v2 hover preview does not run intent models; use --backend rules")
         self.controller = Controller(self.cfg)
         self.predictor = None
         if self.backend != "rules":
@@ -23,6 +26,9 @@ class Pipeline:
     def step(self, frame):
         result = []
         for sample in self.resampler.push(frame):
+            if self.preview_only:
+                result.append((sample, {"mode": "idle", "operation_id": 0, "paused": False, "outcome": None}))
+                continue
             intent = self.predictor.step(sample) if self.predictor else None
             result.append((sample, self.controller.step(sample, intent)))
         return result
@@ -52,7 +58,7 @@ def track(args, cfg):
             states = pipeline.step(frame)
             for sample, state in states:
                 sender.send(sample, state)
-            mode = pipeline.controller.mode
+            mode = cfg.get("preview_profile", "hover2d") if pipeline.preview_only else pipeline.controller.mode
             log.append({"timestamp_ms": frame["timestamp_ms"], "inference_ms": frame["inference_ms"],
                         "classifier_ms": (time.perf_counter()-before)*1000,
                         "hands": len(frame["hands"]), "mode": mode})
@@ -64,7 +70,7 @@ def track(args, cfg):
             camera.close()
         sender.close()
         cv2.destroyAllWindows()
-        output = Path(args.output or ROOT / "runs/track_latency.json")
+        output = Path(args.output or ROOT / ("runs/m1_track_latency.json" if pipeline.preview_only else "runs/track_latency.json"))
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(json.dumps(log, indent=2))
         print(f"Tracker stopped; {len(log)} frames, timing log: {output}")

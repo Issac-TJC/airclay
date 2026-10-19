@@ -1,0 +1,11 @@
+{
+  "source": "hand_mesh.npz",
+  "source_sha256": "334e73a9c2a47fec3c0d5687d3a19b094b5c47c7ab2ceed9ec684ee369a73fcc",
+  "asset_license": "CC-BY-SA-4.0",
+  "author": "Elena FF; reference-style adaptation by AirClay",
+  "changes": "Welded UV seams; 18 Taubin smoothing pairs; tapered wrist extended by 0.20 source units; unified palm weights and smoothed eight-influence skin weights; uniform blue material.",
+  "vertices": 14499,
+  "triangles": 28994,
+  "wrist_extension": 0.2,
+  "hand_smooth_sha256": "f81a209751a0d6b19bdf311f5bd8a30cdb8a0be84c3a8c22002c4a72268454e7"
+}

@@ -1,0 +1,18 @@
+{
+  "author": "Elena FF (https://sketchfab.com/elenaferfor)",
+  "license": "CC-BY-SA-4.0 (http://creativecommons.org/licenses/by-sa/4.0/)",
+  "source": "https://sketchfab.com/3d-models/rigged-hand-eae97cc2a742413cb5338ab942b12c1e",
+  "title": "Rigged hand",
+  "download_url": "https://raw.githubusercontent.com/bizzkoot/Hand-Math/main/assets/models/hand_right.glb",
+  "source_sha256": "11fcdb53fd5c134a658dc93a8c331c4e9bb13df5f978aff44590e484ef5ceb11",
+  "changes": "Extracted bind-space mesh, UV and textures; mapped deform weights to 21 tracked joints; mirrored left hand at runtime.",
+  "asset_license": "CC-BY-SA-4.0",
+  "vertices": 16330,
+  "triangles": 28994,
+  "files_sha256": {
+    "HAND_LICENSE.txt": "7cb69d52309a2c7e35826aae7ec817d6bd26000dd30ecdbb172bebe5219dba03",
+    "hand_basecolor.jpg": "4a70fc29457e7ff48282e77749e690c71c9e6f2995ad7a15f97f7def10b97cf2",
+    "hand_mesh.npz": "334e73a9c2a47fec3c0d5687d3a19b094b5c47c7ab2ceed9ec684ee369a73fcc",
+    "hand_roughness.png": "92b087b87a7f6571014d12ee736001d6a3f917c821bb2014ffcc9a36c1d2da83"
+  }
+}

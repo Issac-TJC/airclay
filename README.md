@@ -32,7 +32,55 @@ macOS 如果请求摄像头权限，请允许你用于启动程序的终端应�
 
 它会发送约 13 秒模拟手势：两次局部拉伸、旋转、调笔刷。这验证交互和通信，**不验证真人识别**。每次运行前可点击 `Create clay sphere` 创建新的球；不会删除已有模型。
 
-## 操作方法
+### M1：十指二维 hover 预览（显式启用）
+
+先按上文启动 Blender 接收器，再任选一种输入：
+
+```bash
+# 无摄像头：十指移动、丢指、越界、丢手和恢复的固定序列
+.venv/bin/airclay --config configs/hover.json simulate
+
+# 真人摄像头：与 v1 共用镜像画面和左右手身份
+.venv/bin/airclay --config configs/hover.json track --backend rules
+```
+
+v2 当前仅提供 `hover2d` 预览，不触发雕刻、抓取、旋转或缩放。左手蓝色、右手橙色，
+`T/I/M/R/P` 分别表示拇指、食指、中指、无名指、小指；颜色不随惯用手设置交换。
+半透明虚线圈表示目标网格第一可见表面的候选点，不代表接触。缺失、越界、未命中或
+断流超过 300 ms 时隐藏。深度明确不可用，不使用每手局部 world landmarks 冒充全局深度。
+
+AirClay 面板的 `Show all fingertips` 关闭时只显示两手食指；`Show hover` 可隐藏全部候选点。
+不指定配置仍运行原有 v1 操作。切换版本需要重启追踪端以创建新 session；接收端自动识别
+v1 或 v2 `hover2d`，拒绝未知版本和同一 session 内的版本切换。
+
+预览也支持 `--config configs/hover.json replay <recording>`，从 v1 录制的 21 个图像关键点提取
+指尖，不修改旧录制或标签。v2 不运行 MLP/GRU。协议约定见 [docs/PROTOCOL_V2.md](docs/PROTOCOL_V2.md)。
+
+### 三维手型预览：观察捏合姿态
+
+重启 Blender 加载新插件后，完整的 21 关节骨架默认驱动参考风格的 **Smooth blue hand**：
+浅蓝光滑表面、连续掌部、修整后的腕口及可关闭的黄色指尖方向线。
+面板 `Hand model` 还可选择 `Realistic skin` 写实皮肤或 `Simple joints` 简化手：
+
+```bash
+.venv/bin/airclay --config configs/hands.json track --backend rules
+# 或先运行无摄像头的张手/捏合/丢手演示：
+.venv/bin/airclay --config configs/hands.json simulate
+```
+
+光标与图例按左蓝右橙区分，底部显示每只手的 `OPEN / PINCH / LOST`。`PINCH` 是姿态反馈，
+不触发雕刻。`Show tracked hands` 控制手模型显示；`Hand display depth` 调整显示位置，
+不是相机标定或真实深度。模型使用图像位置和每手局部三维结构，丢手/断流时隐藏。
+`Flip hand front/back` 默认开启，适配当前反转摄像头；只翻转相对腕部的前后方向，不交换左右手或屏幕位置。
+写实模型为 [Elena FF 的 Rigged hand](https://sketchfab.com/3d-models/rigged-hand-eae97cc2a742413cb5338ab942b12c1e)，
+CC BY-SA 4.0，光滑手为其衍生模型，署名与资源随插件打包。写实模式实体视图保持蓝/橙对象颜色；切换到材质预览可显示皮肤贴图，
+光标和图例继续区分左右手。无需修改追踪配置，也无需另行下载模型。
+新增默认关闭的 `Plastic collision (experimental)`：开启后，十个指尖通过 Blender 原生
+Collision + Soft Body Plasticity 推压物体，关闭后保留形状。先把手指放在物体外，再缓慢向内捏；
+深度暂由 `Collision plane depth` 手动调整。面板提供取消、撤销/重做，保存时自动结束实验。
+使用步骤与限制见 [docs/PLASTICITY.md](docs/PLASTICITY.md)；手型说明见 [docs/HAND_PREVIEW.md](docs/HAND_PREVIEW.md)。
+
+## 操作方法（默认 v1）
 
 | 操作 | 手势 |
 |---|---|
@@ -145,4 +193,7 @@ bash scripts/bootstrap.sh
 
 真实 Blender 网格测试与完整 GUI 测试分别是 `scripts/test_blender.py` 和 `scripts/test_gui.py`，通过 Blender `--python` 启动。GUI 测试使用端口 8766，在独立场景中测试模拟操作、撤销和断流回滚。
 
-详细设计见 [docs/PLAN.md](docs/PLAN.md)，数据和实验约定见 [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md)，当前验证结果见 [docs/VALIDATION.md](docs/VALIDATION.md)。
+详细设计见 [docs/PLAN.md](docs/PLAN.md)，分组件实现与验收清单见
+[docs/IMPLEMENTATION_CHECKLIST.md](docs/IMPLEMENTATION_CHECKLIST.md)，数据和实验约定见
+[docs/EXPERIMENTS.md](docs/EXPERIMENTS.md)，当前验证结果见
+[docs/VALIDATION.md](docs/VALIDATION.md)。

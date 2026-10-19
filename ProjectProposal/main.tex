@@ -1,0 +1,414 @@
+\documentclass{article}
+
+\usepackage[final]{style}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\hypersetup{hidelinks}
+
+% The provided course style leaves these footer fields undefined.
+\makeatletter
+\providecommand{\@neuripsordinal}{Fall 2026}
+\providecommand{\@neuripslocation}{Carnegie Mellon University}
+\makeatother
+
+\title{AirClay: Few-Shot, Depth-Aware Gesture Control\\
+for 3D Sculpting in Blender}
+
+\author{%
+  Author 1 \\
+  Carnegie Mellon University \\
+  \texttt{author1@andrew.cmu.edu} \\
+  \And
+  Author 2 \\
+  Carnegie Mellon University \\
+  \texttt{author2@andrew.cmu.edu} \\
+  \And
+  Author 3 \\
+  Carnegie Mellon University \\
+  \texttt{author3@andrew.cmu.edu} \\
+  \AND
+  Author 4 \\
+  Carnegie Mellon University \\
+  \texttt{author4@andrew.cmu.edu} \\
+  \And
+  Author 5 \\
+  Carnegie Mellon University \\
+  \texttt{author5@andrew.cmu.edu} \\
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We propose AirClay, a markerless two-hand interface for sculpting a deformable
+mesh in Blender with a commodity RGB webcam. The system will solve two coupled
+vision problems: causal recognition of four continuous interaction intents
+(\textit{idle}, \textit{sculpt}, \textit{orbit}, and \textit{resize}) and
+estimation of the hand's short-term displacement in camera space. Public
+gesture and 3D hand-pose datasets will provide most of the training data, while
+one, five, or ten demonstrations per AirClay command will personalize a
+prototype-based temporal classifier. We will compare rules, a single-frame
+MLP, a causal GRU trained from scratch, public-data pretraining, and few-shot
+adaptation. We will separately compare geometric, hand-specific learned, and
+generic monocular depth cues. Evaluation will measure recognition quality,
+false activations, 3D displacement error, latency, and performance on a fixed
+Blender sculpting task. Our main question is whether public-data pretraining
+and few-shot personalization can enable reliable, depth-aware two-hand
+sculpting while preserving interactive response time.
+\end{abstract}
+
+\section{Problem Statement}
+
+Three-dimensional content is increasingly central to animation and games,
+industrial and product design, digital fabrication, scientific visualization,
+and immersive AR/VR experiences. Yet producing that content remains a skilled
+task. In conventional desktop software, a user controls a 3D surface through a
+2D mouse or tablet while repeatedly coordinating camera navigation, brush
+parameters, keyboard modifiers, and editing modes. These tools provide high
+precision, but their indirect mapping can make rapid shape exploration less
+natural: the creator's intended hand motion must first be translated into a
+sequence of device movements and mode changes.
+
+Bare-hand interaction offers a complementary way to specify shape. It can map
+the motion of the fingers and palms directly to the location, direction, and
+magnitude of an edit; it also permits asymmetric bimanual interaction, where
+one hand edits while the other controls the view or scale. Using an ordinary
+RGB webcam would avoid instrumented gloves, controllers, and dedicated depth or
+motion-capture hardware, lowering the equipment and setup requirements for
+casual modeling and classroom use. These are potential interaction benefits,
+however, and they depend on sufficiently reliable perception. A small number
+of visually intuitive commands is only useful if natural hand motion does not
+silently alter the model.
+
+Existing approaches leave several gaps. Gesture-controlled deformation systems
+often simplify perception with colored gloves or other markers
+\citep{mahdikhanlou2022deforming}. Clay-motion recognition has been studied
+with accurate multi-camera Vicon trajectories \citep{veldhuijzen2024shrec}, but
+such inputs do not represent the noise, occlusion, and missing detections of a
+consumer webcam. Many gesture benchmarks classify pre-segmented clips or a
+fixed closed set, whereas an editor receives an unsegmented stream containing
+transitions and unknown actions. Their clip-level accuracy therefore does not
+measure the false activations, unintended releases, or onset delay that directly
+affect an editing session. Finally, monocular hand-pose methods can recover
+articulation, but absolute scale and camera-space depth remain ambiguous from a
+single RGB view, especially when two hands overlap or move toward the camera
+\citep{huang2023nvf,yu2023acr}.
+
+AirClay will address these gaps as a causal, depth-aware control problem. Given
+RGB frames observed up to time $t$, the system will estimate an intent
+$y_t \in \{\textit{idle},\textit{sculpt},\textit{orbit},\textit{resize}\}$,
+a short-term camera-space displacement
+$\Delta\mathbf{p}_t=(\Delta x_t,\Delta y_t,\Delta z_t)$, and a confidence value.
+The dominant hand will pinch and drag to deform a local surface region, the
+non-dominant hand will orbit the model, and a two-hand pinch-and-spread motion
+will resize the brush. Low-confidence predictions and sustained hand loss will
+pause or roll back an operation instead of modifying the mesh.
+
+We will test two linked hypotheses. First, a causal temporal encoder pretrained
+on public gesture data and adapted with one, five, or ten user demonstrations
+will reduce false activations and premature releases relative to thresholds, a
+single-frame MLP, and a GRU trained only on the small target set. Second, a
+calibrated hand-specific depth estimator will recover forward/backward motion
+more accurately and with less jitter than planar control, inverse palm scale,
+or a generic monocular depth model. The downstream test will require a user to
+create two protrusions, rotate the object, resize the brush, undo one edit, and
+save the result in Blender. Thus the project will connect recognition and depth
+errors to task completion time, edit accuracy, undo count, and interaction
+latency rather than evaluating perception only in isolation.
+
+\subsection{Related Work}
+
+\paragraph{Continuous and dynamic gesture recognition.}
+Jester contains 148,092 short RGB clips of 27 gestures collected in front of
+laptop or webcam cameras, including explicit non-gesture classes
+\citep{materzynska2019jester}. IPN Hand instead targets continuous recognition:
+its 50 subjects perform 4,218 gestures in more than 800,000 frames with natural
+motion between commands \citep{benitez2021ipn}. The recent IPN HandS extension
+adds refined temporal boundaries and frame-level 21-joint skeleton annotations
+\citep{benitez2025ipnhands}. These datasets make it possible to learn temporal
+features and rejection behavior before collecting application-specific data.
+HaGRID provides complementary diversity in hand appearance, background,
+illumination, and camera distance across tens of thousands of people
+\citep{kapitanov2024hagrid}. Recent multimodal attention work further shows the
+value of combining skeleton and appearance features for dynamic gestures
+\citep{balaji2024multimodal}. However, most benchmarks report clip accuracy;
+AirClay will also evaluate false activations, release errors, and latency in an
+unsegmented interactive stream.
+
+\paragraph{Clay motion and direct 3D manipulation.}
+The SHREC 2024 clay-motion benchmark is the closest domain-specific work. It
+contains 62 motions in seven fine-grained pottery classes, recorded from one
+expert potter using 14 Vicon cameras and 28 markers across both hands
+\citep{veldhuijzen2024shrec}. Its methods include recurrent networks, HMMs,
+spatiotemporal graph networks, and a skeleton masked autoencoder. This study
+demonstrates that clay motions are long, precise, and visually similar, but it
+classifies isolated motion-capture sequences and does not control an editor.
+Mahdikhanlou and Ebrahimnezhad deform a 3D object with dynamic gestures from an
+RGB camera, but use colored gloves to simplify hand observation
+\citep{mahdikhanlou2022deforming}. AirClay will instead use bare hands,
+continuous causal recognition, and real Blender mesh operations.
+
+\paragraph{Few-shot and user-defined gestures.}
+Few-shot learning is attractive because a fixed public taxonomy cannot encode
+every editor command or a user's preferred motion. Liu et al. combine
+MediaPipe landmarks, lightweight autoencoders, attention, and similarity-based
+classification for few-shot continuous RGB gestures
+\citep{liu2022continuous}. Schluesener and Buecker train LSTM Relation Networks
+episodically on landmark sequences derived from Jester, then recognize new
+gesture sets from one, two, or five examples \citep{schluesener2022fast}.
+Zhou et al. address open-set hand gestures with viewpoint-independent features
+and cosine-based few-shot incremental classification
+\citep{zhou2025openset}. Building on these ideas, AirClay will learn a general
+motion embedding from public datasets and adapt only a small projection head
+and class prototypes from user demonstrations.
+
+\paragraph{Monocular depth and interacting hands.}
+MediaPipe provides useful hand-centered 3D landmarks, but each hand's local
+coordinates do not determine a common camera-space translation. Absolute depth
+from one RGB view is inherently ambiguous. MobRecon demonstrates fast
+single-view hand-mesh recovery with temporal coherence
+\citep{chen2022mobrecon}, while Neural Voting Field directly estimates
+camera-space 3D joints and global hand geometry \citep{huang2023nvf}. For two
+hands, ACR explicitly handles mutual occlusion, truncation, and cross-hand
+confusion \citep{yu2023acr}. Generic monocular models such as Depth Anything V2
+offer robust relative scene depth but are not designed for millimeter-scale
+hand motion \citep{yang2024depthanything}. We will therefore compare a generic
+depth model with a geometric palm-scale baseline and a compact hand-specific
+depth regressor, and will focus on calibrated short-term displacement rather
+than claiming uncalibrated metric depth.
+
+\section{Data}
+
+Public data will supply broad appearance, motion, and depth supervision. A
+small AirClay adaptation set will be used only for editor-specific semantics
+and per-user scale calibration. RHD supplies paired RGB, camera calibration,
+depth, and 3D joints \citep{zimmermann2017hand}, while InterHand2.6M supplies
+camera-space annotations for interacting hands \citep{moon2020interhand}.
+Table~\ref{tab:data} summarizes the planned sources.
+
+\begin{table}[h]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\textwidth}{@{}p{0.17\textwidth}p{0.35\textwidth}X@{}}
+\toprule
+Dataset & Size and annotation & Planned use \\
+\midrule
+\href{https://www.qualcomm.com/developer/software/jester-dataset}{Jester} & 148,092 RGB clips, 27 classes, 22.8 GB & Pretrain dynamic motion and gesture rejection from webcam-like video. \\
+\href{https://gibranbenitez.github.io/IPN_Hand/}{IPN Hand / HandS} & 50 subjects, 4,218 instances, $>$800K continuous RGB frames, boundaries, 21-joint skeletons & Pretrain causal spotting, landmark sequences, and idle/hard-negative behavior. \\
+\href{https://github.com/o-ikne/skelmae-shrec24}{SHREC 2024 Clay} & 62 sequences, 7 pottery classes, bilateral 28-marker 3D tracks & Domain-specific contrastive pretraining on subtle two-hand motion. \\
+\href{https://lmb.informatik.uni-freiburg.de/resources/datasets/RenderedHandposeDataset.en.html}{RHD} & 41,258 train and 2,728 test samples; RGB, depth, intrinsics, segmentation, and 3D joints; 7.1 GB & Train and test an RGB/landmark-to-camera-depth regressor. \\
+\href{https://mks0601.github.io/InterHand2.6M/}{InterHand2.6M} & 2.59M single- and interacting-hand RGB frames with camera and 3D joint annotations & Use a fixed sample from the official 5 FPS interacting-hand subset for two-hand depth and occlusion tests. \\
+\href{https://github.com/hukenovs/hagrid}{HaGRID} & Large RGB gesture collection across subjects, scenes, and 0.5--4 m distance & Use public weights or a fixed class-balanced subset for appearance robustness. \\
+\bottomrule
+\end{tabularx}
+\caption{Public datasets and their distinct roles. Large optional datasets will
+be sampled with stored frame IDs so that experiments remain reproducible.}
+\label{tab:data}
+\end{table}
+
+The core reproducible pipeline will require Jester, IPN HandS, SHREC 2024, and
+RHD. We will not require the full 1.5 TB HaGRIDv2 release; we will use public
+weights or selected classes. Likewise, InterHand2.6M will be restricted to a
+fixed, subject- and view-stratified sample of its 5 FPS interacting-hand data.
+Every RGB dataset will be processed by one pinned MediaPipe version
+\citep{zhang2020mediapipe} into a
+common representation with up to 21 image landmarks per hand, timestamps,
+handedness, and validity masks. When curated skeletons are available, both the
+MediaPipe predictions and ground truth will be retained. Dataset-native 3D
+coordinates will remain in separate fields with their camera calibration;
+incompatible coordinate systems will not be concatenated as if they shared a
+scale.
+
+Public labels will supervise reusable primitives---idle, pinch/click,
+translation, push/pull, and two-hand scale---rather than being relabeled
+directly as Blender commands. For each target user, we will then record one,
+five, or ten demonstrations of each AirClay intent plus two minutes of natural
+hand motion. Three short calibration sequences at approximately 30, 45, and
+60 cm will estimate person- and camera-specific scale. Support, validation, and
+query sequences will be separated before sliding windows are generated, and
+the final test will hold out people rather than frames.
+
+\section{Method}
+
+\subsection{Representation and Public-Data Pretraining}
+
+At roughly 30 Hz, the input will include wrist-centered, palm-scale-normalized
+landmarks; wrist and fingertip image positions and velocities; pinch ratios;
+two-hand distance and relative velocity; hand-presence masks; and lightweight
+features from hand RGB crops. All online features will use only the current and
+previous frames. A causal GRU or temporal convolutional network (TCN) will
+encode a 24-frame window into a motion embedding. We will first train this
+encoder on the Jester and IPN primitives with a supervised classification loss.
+SHREC sequences will add a contrastive objective so that clips from the same
+fine-grained clay class remain close despite duration changes. Public
+non-gesture segments and failed detections will supply rejection examples.
+
+\subsection{Few-Shot Intent Recognition}
+
+Our primary few-shot model will use a Prototypical Network. If
+$f_{\theta}(x)$ is the temporal embedding for sequence $x$, the prototype for
+class $c$ will be
+\begin{equation}
+  \mathbf{p}_c = \frac{1}{|S_c|}\sum_{x_i \in S_c} f_{\theta}(x_i),
+\end{equation}
+where $S_c$ is the user's support set. Prediction will use cosine distance to
+the four prototypes. A validation-set distance threshold will reject
+low-confidence windows as \textit{idle}. During personalization, most of the
+public-data encoder will remain frozen; only the projection layer and class
+prototypes will be updated. Episodic training on public gesture classes will
+make the training objective match 1-, 5-, and 10-shot evaluation.
+
+We will compare five recognition approaches: pinch thresholds and hand-role
+rules; a single-frame MLP; a causal GRU trained from scratch on the same support
+data; the public-pretrained GRU with a linear classifier; and the pretrained
+GRU with prototype adaptation. All approaches will feed the same causal state
+machine. The state machine will use probability smoothing, onset/offset
+hysteresis, a short two-hand arbitration window, mode locking, and rollback
+after sustained hand loss. This isolates the recognition model as the
+experimental variable.
+
+\subsection{Depth and Continuous Motion}
+
+Intent classification will be separated from continuous control. The latter
+will estimate short-term camera-space displacement
+\begin{equation}
+  \Delta\mathbf{p}_t = (\Delta x_t,\Delta y_t,\Delta z_t).
+\end{equation}
+Image-plane landmark motion and the calibrated camera projection will provide
+$\Delta x_t$ and $\Delta y_t$. We will compare three estimates of
+$\Delta z_t$: (1) inverse apparent palm width after three-distance calibration;
+(2) a compact regressor trained on RHD and sampled InterHand RGB, 2D joints,
+and camera-space root depth; and (3) relative depth sampled from Depth Anything
+V2 Small inside the hand region. The learned regressor will predict both depth
+and confidence. Low-confidence frames will retain planar motion but suppress
+depth updates. Temporal filtering and maximum-velocity limits will prevent a
+single unstable estimate from causing a large mesh edit.
+
+Blender will receive intent, normalized pointer position, displacement,
+confidence, sequence number, and operation ID over local UDP. In sculpt mode,
+a view ray will select the surface, and the camera-space displacement will be
+mapped to the current view basis. Nearby vertices will move with a smooth
+geodesic falloff from a snapshot taken at gesture onset. Orbit mode will map
+motion to camera azimuth and elevation, while resize mode will map the change
+in bilateral 3D distance to brush radius. Completed operations will enter a
+30-step undo/redo history.
+
+\subsection{Evaluation}
+
+For recognition, we will report macro-F1, per-class precision and recall,
+unknown-motion rejection, false activations per minute, missed operations,
+premature releases, mode-switch errors, and onset/offset latency. Few-shot
+results will be reported at 1, 5, and 10 shots on held-out users. For depth, we
+will report wrist/root depth mean absolute error, 3D joint MPJPE where ground
+truth is available, forward/backward direction accuracy, temporal jitter, and
+inference time.
+
+Finally, participants will perform a fixed Blender task: create two
+protrusions on a sphere, rotate the model, resize the brush, correct one edit
+with undo, and save the result. We will compare planar-only, geometric-depth,
+and learned-depth control using task completion time, success rate, undo count,
+overshoot count, and final control-point error. The target is at least 20 Hz
+interaction updates and median end-to-end latency below 250 ms; these are
+performance goals to be measured, not assumed results.
+
+\begin{thebibliography}{99}
+\small
+
+\bibitem[Balaji and Prusty(2024)]{balaji2024multimodal}
+P. Balaji and M. R. Prusty.
+\newblock Multimodal fusion hierarchical self-attention network for dynamic hand gesture recognition.
+\newblock \emph{Journal of Visual Communication and Image Representation}, 98:104019, 2024.
+
+\bibitem[Benitez-Garcia et al.(2021)]{benitez2021ipn}
+G. Benitez-Garcia, J. Olivares-Mercado, G. Sanchez-Perez, and K. Yanai.
+\newblock IPN Hand: A video dataset and benchmark for real-time continuous hand gesture recognition.
+\newblock In \emph{Proceedings of ICPR}, pages 4340--4347, 2021.
+
+\bibitem[Benitez-Garcia et al.(2025)]{benitez2025ipnhands}
+G. Benitez-Garcia, J. Olivares-Mercado, G. Sanchez-Perez, and H. Takahashi.
+\newblock IPN HandS: Efficient annotation tool and dataset for skeleton-based hand gesture recognition.
+\newblock \emph{Applied Sciences}, 15(11):6321, 2025.
+
+\bibitem[Chen et al.(2022)]{chen2022mobrecon}
+X. Chen, Y. Liu, Y. Dong, X. Zhang, C. Ma, Y. Xiong, Y. Zhang, and X. Guo.
+\newblock MobRecon: Mobile-friendly hand mesh reconstruction from monocular image.
+\newblock In \emph{Proceedings of CVPR}, pages 20544--20554, 2022.
+
+\bibitem[Huang et al.(2023)]{huang2023nvf}
+L. Huang, C.-C. Lin, K. Lin, L. Liang, L. Wang, J. Yuan, and Z. Liu.
+\newblock Neural Voting Field for camera-space 3D hand pose estimation.
+\newblock In \emph{Proceedings of CVPR}, pages 8969--8978, 2023.
+
+\bibitem[Kapitanov et al.(2024)]{kapitanov2024hagrid}
+A. Kapitanov, K. Kvanchiani, A. Nagaev, R. Kraynov, and A. Makhliarchuk.
+\newblock HaGRID: HAnd Gesture Recognition Image Dataset.
+\newblock In \emph{Proceedings of WACV}, pages 4572--4581, 2024.
+
+\bibitem[Liu et al.(2022)]{liu2022continuous}
+Z. Liu, C. Pan, and H. Wang.
+\newblock Continuous gesture sequences recognition based on few-shot learning.
+\newblock \emph{International Journal of Aerospace Engineering}, 2022:7868142, 2022.
+
+\bibitem[Mahdikhanlou and Ebrahimnezhad(2022)]{mahdikhanlou2022deforming}
+K. Mahdikhanlou and H. Ebrahimnezhad.
+\newblock 3D object deforming and manipulating through dynamic hand gestures.
+\newblock \emph{Entertainment Computing}, 43:100507, 2022.
+
+\bibitem[Materzynska et al.(2019)]{materzynska2019jester}
+J. Materzynska, G. Berger, I. Bax, and R. Memisevic.
+\newblock The Jester dataset: A large-scale video dataset of human gestures.
+\newblock In \emph{Proceedings of ICCV Workshops}, 2019.
+
+\bibitem[Moon et al.(2020)]{moon2020interhand}
+G. Moon, S.-I. Yu, H. Wen, T. Shiratori, and K. M. Lee.
+\newblock InterHand2.6M: A dataset and baseline for 3D interacting hand pose estimation from a single RGB image.
+\newblock In \emph{Proceedings of ECCV}, pages 548--564, 2020.
+
+\bibitem[Schluesener and Buecker(2022)]{schluesener2022fast}
+N. Schluesener and M. Buecker.
+\newblock Fast learning of dynamic hand gesture recognition with few-shot learning models.
+\newblock arXiv:2212.08363, 2022.
+
+\bibitem[Veldhuijzen et al.(2024)]{veldhuijzen2024shrec}
+B. Veldhuijzen, R. C. Veltkamp, O. Ikne, et al.
+\newblock SHREC 2024: Recognition of dynamic hand motions molding clay.
+\newblock \emph{Computers \& Graphics}, 123:104012, 2024.
+
+\bibitem[Yang et al.(2024)]{yang2024depthanything}
+L. Yang, B. Kang, Z. Huang, Z. Zhao, X. Xu, J. Feng, and H. Zhao.
+\newblock Depth Anything V2.
+\newblock In \emph{Advances in Neural Information Processing Systems}, 37, 2024.
+
+\bibitem[Yu et al.(2023)]{yu2023acr}
+Z. Yu, S. Huang, C. Fang, T. P. Breckon, and J. Wang.
+\newblock ACR: Attention collaboration-based regressor for arbitrary two-hand reconstruction.
+\newblock In \emph{Proceedings of CVPR}, pages 12955--12964, 2023.
+
+\bibitem[Zhang et al.(2020)]{zhang2020mediapipe}
+F. Zhang, V. Bazarevsky, A. Vakunov, A. Tkachenka, G. Sung, C.-L. Chang, and M. Grundmann.
+\newblock MediaPipe Hands: On-device real-time hand tracking.
+\newblock arXiv:2006.10214, 2020.
+
+\bibitem[Zhou et al.(2025)]{zhou2025openset}
+J. Zhou, C. Xu, and L. Cheng.
+\newblock Hand gesture recognition from an open-set perspective.
+\newblock \emph{IEEE Transactions on Multimedia}, 27:4181--4192, 2025.
+
+\bibitem[Zimmermann and Brox(2017)]{zimmermann2017hand}
+C. Zimmermann and T. Brox.
+\newblock Learning to estimate 3D hand pose from single RGB images.
+\newblock In \emph{Proceedings of ICCV}, pages 4903--4911, 2017.
+
+\end{thebibliography}
+
+\end{document}

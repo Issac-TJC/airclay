@@ -3,6 +3,12 @@ import itertools
 import time
 
 import numpy as np
+from airclay.interaction.protocol import HAND_COLORS
+
+
+def mirror_camera_image(image):
+    """Mirror once, before detection; preview and transport use that same image."""
+    return image[:, ::-1].copy()
 
 
 class HandMatcher:
@@ -68,7 +74,7 @@ class Camera:
         ok, bgr = self.cap.read()
         if not ok:
             raise RuntimeError("Camera stopped delivering frames")
-        bgr = cv2.flip(bgr, 1)
+        bgr = mirror_camera_image(bgr)
         t = max(self.last_t + 1, int(time.monotonic() * 1000))
         self.last_t = t
         rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
@@ -97,7 +103,7 @@ def preview(image, frame, text):
              (13,17),(0,17),(17,18),(18,19),(19,20))
     for side, hand in frame.get("hands", {}).items():
         p = [(int(v[0] * width), int(v[1] * height)) for v in hand["image"]]
-        color = (255, 180, 60) if side == "Left" else (60, 210, 100)
+        color = tuple(round(v * 255) for v in HAND_COLORS[side][:3][::-1])
         for a, b in edges:
             cv2.line(image, p[a], p[b], color, 2)
         for point in p:

@@ -15,4 +15,10 @@ def config(path=None):
         raise ValueError("pinch thresholds must satisfy 0 < close < open")
     if result["host"] != "127.0.0.1":
         raise ValueError("AirClay only binds localhost")
+    if type(result["interaction_version"]) is not int or result["interaction_version"] not in (1, 2):
+        raise ValueError("interaction_version must be 1 (operations) or 2 (hover preview)")
+    if not 0 < result["hover_radius_ratio"] <= .1:
+        raise ValueError("hover_radius_ratio must be in (0, 0.1]")
+    if result["preview_profile"] not in ("hover2d", "hand_preview"):
+        raise ValueError("preview_profile must be hover2d or hand_preview")
     return result

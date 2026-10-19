@@ -1,0 +1,621 @@
+% Compile this working draft with XeLaTeX (twice) or Tectonic.
+% Overleaf: Menu -> Compiler -> XeLaTeX.
+% ONE SWITCH: change \draftnotestrue to \draftnotesfalse to hide task guidance.
+% Hiding guidance does NOT remove unmeasured results or change planned work to completed work.
+% Search for FILL: to find result/analysis insertion points; search for \workitem for task cards.
+\documentclass{article}
+\usepackage[final]{style}
+\newif\ifdraftnotes
+\draftnotestrue
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[utf8]{inputenc}
+  \usepackage[T1]{fontenc}
+\else
+  \usepackage{fontspec}
+  \setmainfont{texgyretermes}[Extension=.otf,UprightFont=*-regular,
+    BoldFont=*-bold,ItalicFont=*-italic,BoldItalicFont=*-bolditalic]
+  \setsansfont{texgyreheros}[Extension=.otf,UprightFont=*-regular,
+    BoldFont=*-bold,ItalicFont=*-italic,BoldItalicFont=*-bolditalic]
+  \setmonofont{texgyrecursor}[Extension=.otf,UprightFont=*-regular,
+    BoldFont=*-bold,ItalicFont=*-italic,BoldItalicFont=*-bolditalic]
+\fi
+\usepackage{amsmath,amssymb,booktabs,tabularx,array}
+\usepackage{graphicx,xcolor,microtype}
+\usepackage{hyperref}
+\hypersetup{hidelinks}
+\ifdraftnotes
+  \usepackage[breakable]{tcolorbox}
+  \tcbset{colback=blue!3!white,colframe=blue!45!black,boxrule=0.5pt,
+    arc=1mm,left=7pt,right=7pt,top=6pt,bottom=6pt,
+    before skip=9pt,after skip=9pt,breakable,fonttitle=\bfseries}
+\fi
+\newcommand{\workitem}[7]{%
+  \ifdraftnotes
+  \begin{tcolorbox}[title={#1},title after break={#1 (continued)}]
+  \textbf{Owner: }#2\par
+  \textbf{Task: }#3\par
+  \textbf{Protocol: }#4\par
+  \textbf{Deliverables: }#5\par
+  \textbf{Fill here: }#6\par
+  \textbf{Done when: }#7
+  \end{tcolorbox}
+  \fi}
+\newcommand{\missing}{\texttt{---}}
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\makeatletter
+\renewcommand{\@noticestring}{Fall 2026 18-794 Course Project, Carnegie Mellon University.}
+\makeatother
+
+\title{AirClay: Few-Shot, Depth-Aware Gesture Control\\for 3D Sculpting in Blender}
+\author{%
+  Issac Tao\\Carnegie Mellon University\\\texttt{junchent@andrew.cmu.edu}
+  \And Xinyu Jiang\\Carnegie Mellon University\\\texttt{xinyuj2@andrew.cmu.edu}
+  \And Zhijian Wang\\Carnegie Mellon University\\\texttt{zhijianw@andrew.cmu.edu}
+  \AND Caleb Zhong\\Carnegie Mellon University\\\texttt{calebzhong@cmu.edu}
+  \And Milo Mendoza\\Carnegie Mellon University\\\texttt{alvarom@andrew.cmu.edu}}
+
+\begin{document}
+\maketitle
+
+\ifdraftnotes
+\begin{tcolorbox}[title={Team working draft | Due Friday evening, October 23, 2026}]
+The main text is the report; blue boxes are instructions for completing it, not
+statements of contributions already made. Assign names to roles A--E below, then
+follow the task cards in the corresponding sections. Each member records two
+sessions and checks the next member's labels: A checks B, through to E checking A.
+Each owner supplies ready-to-use analysis, figures, and source evidence; E integrates
+and formats them. Budget 10--14 hours per main task plus about 2 hours for recording
+and cross-checking. These are estimates, not hours already worked.
+
+\medskip
+\begin{tabularx}{\linewidth}{@{}p{0.14\linewidth}Y p{0.25\linewidth}@{}}
+\toprule
+Role / name & Main work and report sections & Milestones \\
+\midrule
+A: \underline{\hspace{1cm}} & Data, splits, metric aggregation; \S\ref{sec:data}, \S\ref{sec:recognition} & Tue: data; Thu: summary \\
+B: \underline{\hspace{1cm}} & Rules, MLP, GRU; \S\ref{sec:baseline}, \S\ref{sec:recognition} & Tue: initial runs; Thu: final results \\
+C: \underline{\hspace{1cm}} & Causal TCN; \S\ref{sec:tcn} and its results & Wed: validation; Thu: results \\
+D: \underline{\hspace{1cm}} & Raw landmarks, filters, ablations; \S\ref{sec:filter}, \S\ref{sec:ablation} & Mon: recording format; Thu: results \\
+E: \underline{\hspace{1cm}} & Replay, system experiments, integration; \S\ref{sec:system}, \S\ref{sec:discussion} & Thu: experiments; Fri: final report \\
+\bottomrule
+\end{tabularx}
+
+\medskip
+\textbf{Status convention:} Change ``planned'' or ``not yet evaluated'' only after
+obtaining evidence. In tables, \missing{} means unmeasured, not zero. Move new
+methods that have not passed validation by Wednesday to future work.
+\textbf{Compilation:} Use XeLaTeX or Tectonic. Change
+\code{\draftnotestrue} to \code{\draftnotesfalse} at the top of the source to hide
+all task guidance. The report must still disclose unfinished work. Target 4--5
+pages of main text, excluding references.
+\end{tcolorbox}
+\fi
+
+\section{Introduction}
+AirClay investigates whether an ordinary RGB webcam can support reliable, continuous
+two-hand control of a deformable mesh in Blender. The dominant hand pinches and drags
+to sculpt, the other hand controls the view, and a two-hand pinch changes the brush
+radius. The central difficulty is not recognizing a few isolated poses: natural
+motion, uncertain landmarks, occlusion, and transitions must not silently become
+unintended edits. A system with high frame accuracy can still be unusable if it
+frequently starts the wrong operation or releases a gesture prematurely.
+
+Our proposal targets public-data pretraining, few-shot personalization, and calibrated
+camera-space displacement. This midterm establishes the prerequisite baseline:
+causal landmark processing, rule-based and learned intent interfaces, a shared
+interaction state machine, and Blender mesh control. The current sculpting motion
+is planar; neither user-adapted recognition nor camera-space depth has been validated.
+We separate implemented functionality, synthetic integration evidence, and planned
+human evaluation throughout this report.
+
+In response to proposal feedback, the immediate research questions are whether a
+causal temporal model improves continuous intent recognition over static baselines,
+and whether filtering reduces unintended operations without excessive delay.
+Recorded-landmark replay provides a reproducible fallback for interactive testing.
+The existing evidence establishes a working software pipeline, not improved human
+recognition or successful few-shot, depth-aware sculpting.
+
+\workitem{I1 | Base the conclusions on the results}
+{E; each experiment owner contributes one finding.}
+{After completing the tables, update the final paragraph of this section to summarize what was actually found.}
+{Keep the research questions open until measured. Do not prewrite claims that TCN is better, Kalman filtering works, or the real-time targets have been met.}
+{Two or three summary sentences, each supported by a table or a documented failure case.}
+{Replace the final two sentences of this section and update the Discussion consistently.}
+{Friday, Oct. 23: the results, summary, and completion status agree.}
+
+\section{Related Work}
+\paragraph{Continuous gesture recognition and landmarks.}
+MediaPipe Hands combines palm detection and landmark estimation for RGB input
+\citep{zhang2020}; it supplies our fixed front end, not task-specific intent labels.
+Jester provides short gesture clips \citep{materzynska2019jester}, whereas IPN Hand
+includes uninterrupted gestures and intervening natural motion \citep{benitez2021}.
+IPN HandS adds frame-level skeleton annotations and refined gesture boundaries
+\citep{benitez2025ipnhands}, making annotation quality relevant to temporal modeling.
+These datasets motivate reusable motion features, but their labels cannot simply
+be renamed as Blender commands. AirClay must also measure false operations, missed
+commands, and boundary delay rather than relying on isolated-clip accuracy.
+
+\paragraph{Clay motions and direct 3D interaction.}
+SHREC 2024 studies seven classes of similar clay-molding motions using bilateral
+skeletal trajectories captured with Vicon \citep{veldhuijzen2024shrec}. It provides
+relevant two-hand motion structure, but its motion-capture inputs do not establish
+robustness to webcam noise or unintended edits in an interactive system.
+\citet{mahdikhanlou2022deforming} demonstrate webcam-based object deformation using
+colored gloves to track hand motion. AirClay instead uses bare hands and explicit
+operation boundaries in Blender. The research question is whether uncertain,
+continuous visual input can control edits reliably, rather than whether a virtual
+hand can be rendered.
+
+\paragraph{Few-shot and user-defined gestures.}
+\citet{liu2022continuous} combine MediaPipe landmarks, lightweight autoencoder
+features, and support-set similarity for few-shot gesture sequences.
+\citet{schluesener2022fast} use LSTM-based Relation Networks with landmark sequences
+from a modified Jester dataset to recognize gesture sets from a few examples.
+These domain-specific approaches motivate adapting temporal representations to
+users instead of collecting a large command dataset for every person. Prototypical
+Networks \citep{snell2017} provide the general class-prototype formulation for our
+planned 1-, 5-, and 10-shot adaptation. We have not yet evaluated that transfer;
+support/query separation and rejection of natural non-command motion remain necessary.
+
+\paragraph{Temporal architecture and signal stability.}
+MLP and GRU remain static and recurrent baselines. Dilated causal TCNs offer a
+controlled alternative for sequence modeling \citep{bai2018}; Transformers
+\citep{vaswani2017} are a later candidate requiring causal masking, suitable training
+data, and latency measurements. Neither architecture automatically provides usable
+pretraining. Interactive filtering research makes the jitter--lag tradeoff explicit
+\citep{casiez2012}. In response to the proposal feedback, we will compare a causal
+TCN and None/EMA/Kalman filtering under fixed conditions, measuring operational
+errors alongside classification quality and delay. The 1 Euro filter motivates this
+tradeoff; it is not an implemented AirClay filter or a completed comparison.
+
+\paragraph{Monocular depth and interacting hands.}
+MobRecon targets efficient, temporally coherent single-view hand reconstruction
+\citep{chen2022mobrecon}; Neural Voting Field estimates camera-space hand geometry
+\citep{huang2023}. ACR uses attention and cross-hand reasoning for arbitrary
+single- and two-hand configurations, including occlusion and truncation
+\citep{yu2023acr}. These methods address geometry beyond hand-local articulation.
+Depth Anything V2 provides a general monocular depth alternative
+\citep{yang2024depthanything}; its relative-depth model would still require
+calibration and hand-motion evaluation for our control task. RHD
+\citep{zimmermann2017hand} and InterHand2.6M \citep{moon2020interhand} are planned
+sources of supervised single- and interacting-hand geometry. We retain these depth
+comparisons from the proposal as future work: current planar control and local
+MediaPipe coordinates do not establish shared camera-space depth or metric accuracy.
+
+\section{Methods}
+\subsection{Implemented causal pipeline and baselines}\label{sec:baseline}
+The front end uses MediaPipe 0.10.21 with up to two hands and 21 landmarks per hand.
+Frames are mirrored once. Handedness and wrist continuity maintain left/right slots.
+The current tracker applies an exponential moving average (EMA), with
+$\hat p_t=0.45p_t+0.55\hat p_{t-1}$, only across gaps shorter than 150 ms.
+A causal 30 Hz resampler uses the most recent available observation and marks stale
+observations invalid; it does not interpolate using future frames.
+
+For each hand, we concatenate 63 wrist-centered, palm-normalized local coordinates,
+two image-space wrist coordinates, two wrist velocities, a pinch ratio, and a presence
+indicator. Two-hand wrist distance and its velocity yield a 140-dimensional feature
+vector. Features are ordered by dominant/non-dominant role; left-hand chirality is
+canonicalized. Invalid hands contribute zeros with an absent presence indicator.
+
+The rule baseline uses the image-space pinch ratio
+\begin{equation}
+ r_t=\frac{\|u_{4,t}-u_{8,t}\|_2}{\max(\|u_{0,t}-u_{9,t}\|_2,10^{-5})},
+ \qquad \mathcal{Y}=\{\mathrm{idle},\mathrm{sculpt},\mathrm{orbit},\mathrm{resize}\}.
+\end{equation}
+Pinch closes below 0.30 and opens above 0.45. The active hand role determines sculpt
+or orbit; two closed pinches request resize. The MLP uses the current frame's 135
+non-velocity features, one 128-unit ReLU hidden layer, dropout 0.2, and four logits.
+The unidirectional GRU uses 24 frames, two 128-unit recurrent layers, dropout 0.2,
+and a linear head on the last output. Learned inference currently takes the largest
+logit and returns idle during window warm-up; probability smoothing and calibrated
+unknown-gesture rejection are not implemented.
+
+Implemented training uses inverse-frequency weighted cross-entropy, AdamW at
+$10^{-3}$, batch size 64, gradient clipping at 1, and validation Macro-F1 early
+stopping (patience 8, maximum 50 epochs). Existing trained weights are synthetic
+smoke-test artifacts, not human-trained models.
+
+\begin{figure}[htbp]
+\centering
+\fbox{\begin{minipage}{0.95\linewidth}\centering
+RGB webcam $\rightarrow$ fixed landmarks and hand identity $\rightarrow$ causal features\\[3pt]
+Rules / MLP / GRU $\rightarrow$ shared state machine $\rightarrow$ local UDP\\[3pt]
+$\rightarrow$ Blender ray selection, planar deformation, orbit, and brush resize\\[3pt]
+Recorded landmarks $\rightarrow$ the same feature, intent, and control path\\[3pt]
+\textit{Planned comparisons: causal TCN and alternative landmark filters.}
+\end{minipage}}
+\caption{Implemented pipeline and replay fallback. Proposed comparisons are explicitly marked.}
+\label{fig:pipeline}
+\end{figure}
+
+\workitem{M1 | Train the existing baselines fairly}
+{B (name to be assigned); depends on A's fixed split and D's shared preprocessing.}
+{Run rules, MLP, and GRU. Keep the existing architectures and first check that labels, features, and online inference agree.}
+{Use EMA inputs derived from raw landmarks ($\alpha=0.45$) and the same state machine for the main comparison. Train learned models with seeds 42/43/44 for at most 50 epochs; choose rule thresholds on validation data only. Do not use \code{--allow-synthetic} for reported human results. Although the MLP sees only the final frame, retain and document its current 24-frame warm-up.}
+{Save \code{best.pt}, \code{training.json}, \code{split.json}, evaluation JSON, confusion matrices, configuration, and source version for each run. Rules need no repeated training.}
+{Check this subsection against the final configuration; complete Tables~\ref{tab:recognition} and~\ref{tab:events} and the associated failure analysis.}
+{Initial results by Tuesday, Oct. 20; all three seeds by Thursday, Oct. 22. Tune using \code{evaluate --partition val}; evaluate test only after freezing the configuration.}
+
+\subsection{Interaction state machine and mesh control}
+All backends share a state machine with neutral re-arming, a 200 ms two-hand
+arbitration period, and a locked active mode. Other classes cannot steal an active
+operation. Rule-based release follows pinch hysteresis; learned release requires
+100 ms of idle. Missing required hands pause the operation, and sustained loss
+for 300 ms cancels it. These mechanisms limit unintended changes but add response
+delay and do not correct a persistently wrong classification.
+
+Local UDP packets carry session, sequence, operation, and control information.
+Blender selects the first visible surface with a view ray. A brush propagates over
+mesh edges using approximate geodesic distance, with displacement from an onset
+snapshot:
+\begin{equation}
+ q_i=\min(d_i/R,1),\qquad w_i=1-3q_i^2+2q_i^3,\qquad
+ v_i(t)=v_i(0)+w_i\Delta_t .
+\end{equation}
+Here $R$ is brush radius and $\Delta_t$ is view-plane displacement, capped at 0.5
+Blender units. Orbit changes the view; resize changes the brush, not object scale.
+Only one interaction mode is active at a time. Completed operations enter a bounded
+undo/redo history; interrupted edits can be restored from their snapshots.
+
+\subsection{Human data and evaluation protocol (planned)}\label{sec:data}
+The pilot will include the five team members, each contributing two sessions.
+Each session targets 20 instances of each active intent and two minutes of natural
+motion. Prompt times supply rough labels only; a second member checks actual intent
+boundaries. With seed 42, participants will be split into three training, one
+validation, and one test subject before window generation. All sessions of a person
+stay in one partition. This is a small pilot with only one held-out test person,
+not a population-level generalization study.
+
+\workitem{M2 | Record, annotate, and inventory the data}
+{A (name to be assigned); everyone records and cross-checks labels. First wait for D to verify raw-landmark storage.}
+{Record two independent sessions per person with fixed dominant-hand settings, hardware, and camera configuration. Log actual resolution, frame rate, environment, and anomalies. Include natural motion, brief occlusion, leaving/re-entering the frame, and hand crossings alongside the guided actions.}
+{Use \code{smoothing=1.0} to save identity-assigned landmarks without application-level EMA; this does not disable MediaPipe internal temporal processing. Save the recording configuration and derive all filters from the same raw recordings. Run \code{airclay record --subject p01 --session s01 --guided --video}, placing the global \code{--config} option before record; change IDs for other recordings. Review labels with \code{airclay annotate}; rule-trigger times are not ground truth. Video is only a reference; landmark timestamps are authoritative.}
+{Raw recordings, reviewed labels, recording configuration, and per-class counts and durations. Run \code{airclay split data --output data/split.json --seed 42} for a 3/1/1 split; ensure data contains only the intended recordings from these five people.}
+{Replace the planned description with actual participant, session, frame, and class counts, durations, and anonymized split membership. If collection falls short, report the actual counts rather than inventing samples.}
+{Tuesday, Oct. 20: ten sessions from five people have been cross-checked, all four classes appear in training, and neither subjects nor adjacent windows leak across partitions.}
+
+\subsection{Causal TCN comparison (planned)}\label{sec:tcn}
+The planned TCN will consume the same 24-frame, 140-dimensional sequence and predict
+the final frame's intent. Residual dilated convolutions will use left padding only;
+normalization must not aggregate future timesteps. The comparison will hold the
+front end, training split, state machine, and evaluation protocol fixed. No TCN
+implementation or measured advantage is claimed at this stage.
+
+\workitem{M3 | Add a causal TCN; defer the Transformer}
+{C (name to be assigned); depends on A's split and D's shared EMA data. Use the same evaluation scripts as B.}
+{Implement a lightweight TCN and extend model selection and checkpoint validation for train/evaluate/track/replay. The current CLI only supports rules/mlp/gru; a tcn command is not available yet.}
+{Suggested starting point: a 140-to-64 projection, three residual blocks with two causal kernel-3 convolutions each, dilation 1/2/4, ReLU, dropout 0.2, and a four-class linear head on the final timestep. Use left padding only and no normalization across time. Keep the visible history at 24 frames and use B's training budget, three seeds, and warm-up policy. Adjust architecture on validation data only.}
+{Configuration, code version, parameter count, three-seed checkpoints and evaluation results. Check output shapes, checkpoint round trips, invariance of earlier outputs to changes in future inputs, and agreement between batch and online features.}
+{Replace the planned description with the final architecture and supporting citation. Complete Tables~\ref{tab:recognition} and~\ref{tab:events}; discuss accuracy alongside parameter count and time, rather than selecting only the highest score.}
+{Basic validation by Wednesday, Oct. 21; results by Thursday, Oct. 22. If unfinished, retain planned status and missing values without blocking the three existing baselines.}
+
+\subsection{Filtering comparison (planned)}\label{sec:filter}
+The existing EMA will be compared with no additional application-level smoothing
+and a constant-velocity Kalman filter. All variants must start from the same
+unsmoothed, identity-assigned observations. Each recording will reset filter state;
+missing detections must remain missing rather than become invented valid hands.
+The first comparison will hold the rule backend fixed to isolate the filter's
+effect. Image-space jitter will be reported in normalized image coordinates,
+not millimeters without calibration.
+
+\workitem{M4 | Preserve raw inputs before comparing filters}
+{D (name to be assigned); provide A/B/C with a reusable preprocessing contract on Monday.}
+{Verify that \code{smoothing=1.0} disables application-level EMA. Derive None, EMA, and Kalman versions from the raw data, preserving the originals. Current record saves camera-processed points and evaluate does not automatically refilter them; add consistent offline/online preprocessing.}
+{Hold raw hand identities, timestamps, validity, and labels fixed; change only coordinate processing. Reset at each recording and after long losses, and never smooth across people or sessions. Fix EMA at 0.45. Use position and velocity states per coordinate for Kalman filtering, update with actual time intervals, and choose and save Q/R on validation data only. Applying Kalman on top of EMA is not the intended same-input comparison.}
+{Three derived-data manifests, parameters, and source versions; trajectory comparisons for stationary, fast-motion, and brief-occlusion intervals. Document the identity-assignment/filtering order and check numerical agreement between online and offline processing.}
+{Describe Kalman states, observations, initialization, and loss handling. Complete Table~\ref{tab:ablation} and explain whether lower jitter costs more lag or more missed operations.}
+{Raw recording verified Monday, Oct. 19; methods validated Wednesday, Oct. 21; results Thursday, Oct. 22. Leave unvalidated filters as planned work.}
+
+\section{Results}
+\subsection{Available implementation evidence}
+The Python regression suite passed all 57 tests in the October 19 audit. Historical
+synthetic Blender integration records demonstrate four committed operations
+(two sculpt edits, orbit, and brush resize), undo/redo, and timeout rollback on a
+10,242-vertex mesh. One saved run reports a 16.48 ms median from message transmission
+to application. This excludes camera capture, landmark inference, intent waiting,
+and final display presentation; it is not end-to-end latency. MLP and GRU training,
+checkpoint loading, and evaluation completed two-epoch synthetic smoke runs. Those
+runs establish pipeline connectivity, not a meaningful ranking of recognition models.
+
+\workitem{R1 | Audit evidence and validate the current version}
+{E (name to be assigned); B checks the model pipeline.}
+{Review automated and Blender integration evidence, recording the date, source version, machine, and configuration.}
+{The 57 tests in the text refer to the current \code{.venv/bin/python -m pytest -q} audit. Historical evidence is in \code{runs/plasticity/v1/gui_test.json}: four operations, 16.479 ms, and 10,242 vertices. It has no source-hash field, so it does not establish that every current change was validated. Synthetic training evidence is in \code{runs/smoke_mlp/} and \code{runs/smoke_gru/}; do not use it in the human comparison tables.}
+{Current test logs, version, and conditions. Save any new GUI run in a separate directory without overwriting historical records. If illustrating deformation, use an actual Blender screenshot and identify synthetic or human input in the caption.}
+{Update the test date and actual findings here; there is no need to enumerate every software test in the report.}
+{Thursday, Oct. 22: every number is traceable, and historical checks not rerun remain explicitly historical.}
+
+\subsection{Recognition and continuous events (not yet evaluated)}\label{sec:recognition}
+No human recognition results are available in the current evidence. Tables
+\ref{tab:recognition} and \ref{tab:events} reserve the planned comparison.
+Frame metrics will report raw classifier outputs, with state-machine outputs
+reported separately. Event metrics use post-controller labels: each ground-truth
+event is greedily matched to the unused same-class prediction with greatest positive
+overlap. Unmatched predictions are false operations; unmatched ground truth events
+are misses. Early release means a matched prediction ends over 100 ms early.
+Onset delay is predicted minus annotated onset and excludes unmatched events, so
+it must always be read alongside misses. Negative delays denote early activation.
+
+\begin{table}[htbp]
+\caption{Planned human classification comparison. \missing{} means not measured.
+Learned metrics will be mean $\pm$ standard deviation across three seeds on the
+same held-out person; this variation does not estimate cross-user uncertainty.}
+\label{tab:recognition}
+\centering
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+ & Macro-F1 & \multicolumn{4}{c}{Per-class recall} & Model time \\
+\cmidrule(lr){3-6}
+Method & & Idle & Sculpt & Orbit & Resize & (ms/frame) \\
+\midrule
+Rules & \missing & \missing & \missing & \missing & \missing & \missing \\
+MLP & \missing & \missing & \missing & \missing & \missing & \missing \\
+GRU & \missing & \missing & \missing & \missing & \missing & \missing \\
+TCN (planned) & \missing & \missing & \missing & \missing & \missing & \missing \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\caption{Planned continuous-event comparison after the shared controller.
+Report missed and early-release event counts, not only delay of successful matches.}
+\label{tab:events}
+\centering
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Method & False ops/min & Misses & Early releases & Onset (ms) & Offset (ms) \\
+\midrule
+Rules & \missing & \missing & \missing & \missing & \missing \\
+MLP & \missing & \missing & \missing & \missing & \missing \\
+GRU & \missing & \missing & \missing & \missing & \missing \\
+TCN (planned) & \missing & \missing & \missing & \missing & \missing \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% FILL: Replace the following paragraph with evidence-based analysis after the human runs.
+The recognition hypothesis remains untested. A useful comparison must establish
+whether temporal context helps transitions and ambiguous pinches, whether gains
+persist after the shared controller, and whether fewer false operations are caused
+by missed gestures rather than better rejection.
+
+\workitem{R2 | Complete results, confusion matrices, and analysis}
+{A aggregates; B/C supply their results and analysis.}
+{Complete Tables~\ref{tab:recognition} and~\ref{tab:events}, add a composite figure of four confusion matrices, and replace the final paragraph of this subsection.}
+{In the JSON, \code{classification} contains raw predictions, \code{state_classification} contains controller outputs, and \code{events} contains operation metrics; do not mix them. Compute each seed separately, then aggregate; seeds are not additional participants. Also retain per-class precision/F1, wrong-mode counts, ground-truth event totals, and sample supports. Measure pure model time separately on fixed hardware, batch=1, after warm-up: existing classifier logs also include feature processing and sending.}
+{Complete JSON for each model/seed, the aggregation script, confusion matrices, and at least two timestamped failure clips. Use seed=42 for the main figure, not the best-performing seed. State parameter counts and hardware in the text or caption.}
+{Explain which classes are confused, whether temporal models reduce false activations, whether misses increase, and whether the 200 ms arbitration dominates onset delay. Include a finding contrary to expectations if one was actually observed.}
+{Thursday, Oct. 22: test after configuration freeze and report measured results only. Do not use test-set failure cases to retune parameters.}
+
+\subsection{System timing and task completion (not yet evaluated)}\label{sec:system}
+The planned task is to create two protrusions, rotate the view, change brush radius,
+make another edit, undo once, and save the mesh. The five team members will receive
+equal practice and complete a rule-based pilot, with time, success, and unintended
+operations recorded. This is a usability check with familiar users, not a controlled
+comparison of learned models. The proposal targets at least 20 Hz updates and median
+camera-to-display latency below 250 ms; neither target has been established.
+
+\begin{table}[htbp]
+\caption{System evidence and pending human measurements. Historical synthetic transport
+timing is not comparable to camera-to-display latency. \missing{} means unmeasured.}
+\label{tab:system}
+\centering
+\begin{tabularx}{\linewidth}{@{}Yll@{}}
+\toprule
+Measurement & Value & Evidence \\
+\midrule
+Python regression tests & 57 passed & Oct.\ 19 audit \\
+Synthetic committed operations & 4 & Saved GUI run \\
+Synthetic send-to-apply median & 16.48 ms & Saved GUI run \\
+Human camera-to-display median / p95 & \missing{} / \missing & Pending \\
+Human effective update rate & \missing & Pending \\
+Task success / attempts; median duration & \missing{} / \missing{}; \missing & Pending \\
+Ten-minute stability / recovery & \missing & Pending \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\workitem{R3 | Validate the system and the replay fallback}
+{E (name to be assigned); everyone performs the fixed task, and B checks timing definitions.}
+{Use the same initial sphere, view, and brush radius. Give each person two minutes of practice and one fixed-task attempt. Also run a continuous 600-second rule-based test with brief hand loss, stream interruption, and recovery; save a reproducible human demonstration. Check Fig.~\ref{fig:pipeline} against the final implementation.}
+{Log with \code{airclay track --backend rules --seconds 600 --output runs/midterm/stability.json}; also save Blender logs and any needed video. \code{airclay replay data/p01_s01 --backend rules} replays landmarks, not arbitrary RGB video. For end-to-end latency, use one external high-frame-rate video showing both hand and screen, annotate at least 20 visible action/response pairs, and report frame rate, event definitions, median, and p95. Leave latency unmeasured if it cannot be independently measured; do not sum stage medians to fabricate end-to-end latency.}
+{Per-person task time, success, unintended undo count excluding the one required undo, wrong modes, and failure reasons. Save logs, video/screenshots, hardware, source version, effective update rate, and loss/interruption recovery records.}
+{Complete Table~\ref{tab:system} and discuss system bottlenecks and failures. If live capture is unavailable or unreliable, demonstrate recorded-landmark replay and identify its input source.}
+{Thursday, Oct. 22: the demonstration is reproducible, tracking/model/send-to-apply/end-to-end times are distinguished, and unavailable measurements remain explicitly unmeasured.}
+
+\section{Ablation Study (planned)}\label{sec:ablation}
+The primary ablation will compare filters with the rule backend and controller held
+fixed. For each participant, separately recorded 10 s stationary-hand intervals
+and repeated fast motion/release intervals will quantify jitter and response.
+For a stationary interval, image-space jitter is
+$J=\sqrt{N^{-1}\sum_t\|u_t-\bar u\|_2^2}$ for the index fingertip, using the same
+valid timestamps across filter variants. This measures repeatability, not absolute
+position accuracy. Filter tuning uses validation participants only; the principal
+held-out result uses the test person's intervals.
+
+\begin{table}[htbp]
+\caption{Planned filter ablation on identical raw observations with the rule backend.
+EMA is implemented; the Kalman comparison and all human values remain pending.}
+\label{tab:ablation}
+\centering
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Filter & Jitter (norm.\ image) & False ops/min & Misses & Onset (ms) \\
+\midrule
+None & \missing & \missing & \missing & \missing \\
+EMA ($\alpha=0.45$) & \missing & \missing & \missing & \missing \\
+Kalman (planned) & \missing & \missing & \missing & \missing \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+An additional offline-only ablation will remove the 200 ms onset arbitration while
+retaining the same EMA input, rule backend, mode locking, and loss handling. It will
+measure whether reduced onset delay increases mode errors or false operations.
+No mesh safety mechanism will be disabled in a live session for this experiment.
+Neither ablation has been measured; improved stability cannot yet be attributed
+to filtering or to the controller.
+
+\workitem{A1 | Change one factor at a time in ablations}
+{D (name to be assigned); A helps with statistics and E checks interaction consequences.}
+{Primary experiment: fix rules and the full controller, then compare None/EMA/Kalman. Additional offline experiment: fix rules and EMA, compare \code{combo_ms=200} with \code{combo_ms=0}, and retain all other mechanisms.}
+{Each person additionally records at least two 10-second stationary intervals and ten fast-motion/release actions, using the existing subject split. Use normalized 2D index-fingertip coordinates; compute RMS per stationary interval, then report aggregates and valid-frame rates. Tune Q/R on validation data, never on the test person. Do not interpolate missing detections into valid hands; keep inputs and labels fixed. Evaluate arbitration changes offline only and retain hand-loss rollback in human sessions.}
+{Raw values, parameters, and scripts for Table~\ref{tab:ablation}; one time-aligned None/EMA/Kalman trajectory plot. Save wrong modes, false operations, misses, and delays for the arbitration comparison separately.}
+{Quantify jitter reduction and response delay. Check whether fewer false operations merely reflect more misses. Present arbitration findings in a separate small table or paragraph, not in the filter table. Retain planned status if no results are available.}
+{Thursday, Oct. 22: every claim traces to a same-input comparison. Do not report millimeters without calibration or treat a smoothed trajectory as ground truth.}
+
+\section{Discussion and Conclusion}\label{sec:discussion}
+The current evidence supports engineering feasibility: the feature, model, replay,
+communication, and mesh-editing components can be exercised together, with explicit
+operation boundaries and rollback. It does not establish robust human recognition.
+The principal remaining risks are landmark noise and identity errors, a small target
+dataset, latency accumulated across perception and arbitration, and uncalibrated depth.
+
+Our intermediate goals respond directly to these risks: (1) replay verified recordings
+through the existing baselines; (2) compare a causal TCN and filtering under fixed
+conditions; and (3) validate real-camera interaction and stability. Recorded-landmark
+replay remains the fallback when live capture is unreliable. The proposed TCN is a
+controlled architectural comparison, not evidence that pretraining is available or
+that a more complex model will necessarily outperform a GRU.
+
+Public-data pretraining, prototype adaptation at 1/5/10 shots, and calibrated depth
+remain future work. Public gesture labels must be reconciled with editor semantics,
+and few-shot support sequences must be separated from query sequences before windowing.
+Depth experiments will require calibration and independent camera-space ground truth;
+planar control remains the fallback. A later Transformer comparison will require
+a justified data source, causal inference, and a measured compute budget. Until the
+human tables are populated, no recognition, stability, or depth improvement over
+the baselines can be concluded.
+
+\workitem{D1 | Write the discussion and final conclusions}
+{E integrates; A/B/C/D each supply one paragraph of experimental conclusions.}
+{Replace the opening paragraph and final sentence with actual findings, retaining unfinished work and limitations.}
+{Address the TA feedback explicitly: was noise measured, which latency stages were measured, does replay work, was TCN completed, and are pretraining and Transformers still planned? One test participant among five cannot establish broad generalization; seed standard deviation is not a cross-user confidence interval.}
+{A discussion of supporting evidence, counterexamples/failures, limitations, and next-stage priorities, with references to specific tables.}
+{Keep this section consistent with the Introduction. If a new method is unfinished, explain the completed baselines and next steps rather than concealing the gap.}
+{Friday, Oct. 23: all authors have read the report, and conclusions do not exceed the evidence.}
+
+\ifdraftnotes
+\begin{tcolorbox}[title={Submission checklist | Visible in the working draft only}]
+\textbf{Ownership and evidence}\par
+$\square$ Assign names to A--E. These are planned roles; write any required contribution statement separately from actual completed work.\par
+$\square$ Everyone has recorded two sessions and cross-checked labels. A has saved the anonymized subject split and checked for leakage.\par
+$\square$ Tables contain measured values; unfinished entries explicitly say unmeasured, and \missing{} is never treated as zero.\par
+$\square$ Models, filters, recordings, hardware, and source versions are traceable. Synthetic weights and historical logs are not presented as current human results.\par
+$\square$ Raw classification, controller outputs, event metrics, and latency definitions are distinguished. Figures identify samples, units, and seeds.\par
+\medskip
+\textbf{Writing and layout}\par
+$\square$ Search the source for \code{FILL:}, \code{planned}, \code{not yet evaluated}, and \code{\missing}; update each occurrence or retain an accurate limitation.\par
+$\square$ Verify all five names and emails, cited references, figure/table numbers, and cross-references; no unresolved question marks remain.\par
+$\square$ Each owner has supplied their analysis. E integrates rather than writes every experiment; hand rendering and plasticity do not displace research content.\par
+$\square$ Change \code{\draftnotestrue} to \code{\draftnotesfalse} and recompile. Keep the main text within 4--5 pages, excluding references.\par
+$\square$ Hiding task boxes hides guidance, not unfinished experiments. Inspect every PDF page, remove empty figure placeholders, and retain honest unmeasured-status statements.\par
+$\square$ All authors review the final report before submission on Friday evening, Oct. 23. Do not add new models at the last minute.\par
+\medskip
+\textbf{Team decisions still needed:} Names for A--E, a common recording time and device,
+and the final-stage priority between few-shot recognition and depth. These choices
+do not block use of this draft, and planned work must not be presented as completed results.
+\end{tcolorbox}
+\fi
+
+\clearpage
+\begin{thebibliography}{99}
+\small
+\bibitem[Bai et al.(2018)]{bai2018}
+S. Bai, J. Z. Kolter, and V. Koltun.
+An empirical evaluation of generic convolutional and recurrent networks for sequence modeling.
+\emph{arXiv:1803.01271}, 2018. \url{https://arxiv.org/abs/1803.01271}.
+
+\bibitem[Benitez-Garcia et al.(2021)]{benitez2021}
+G. Benitez-Garcia, J. Olivares-Mercado, G. Sanchez-Perez, and K. Yanai.
+IPN Hand: A video dataset and benchmark for real-time continuous hand gesture recognition.
+In \emph{ICPR}, pp.\ 4340--4347, 2021.
+\url{https://gibranbenitez.github.io/IPN_Hand/}.
+
+\bibitem[Benitez-Garcia et al.(2025)]{benitez2025ipnhands}
+G. Benitez-Garcia, J. Olivares-Mercado, G. Sanchez-Perez, and H. Takahashi.
+IPN HandS: Efficient annotation tool and dataset for skeleton-based hand gesture recognition.
+\emph{Applied Sciences}, 15(11):6321, 2025. \url{https://doi.org/10.3390/app15116321}.
+
+\bibitem[Casiez et al.(2012)]{casiez2012}
+G. Casiez, N. Roussel, and D. Vogel.
+1 Euro filter: A simple speed-based low-pass filter for noisy input in interactive systems.
+In \emph{CHI}, pp.\ 2527--2530, 2012. \url{https://gery.casiez.net/1euro/}.
+
+\bibitem[Chen et al.(2022)]{chen2022mobrecon}
+X. Chen, Y. Liu, Y. Dong, X. Zhang, C. Ma, Y. Xiong, Y. Zhang, and X. Guo.
+MobRecon: Mobile-friendly hand mesh reconstruction from monocular image.
+In \emph{CVPR}, pp.\ 20544--20554, 2022. \url{https://arxiv.org/abs/2112.02753}.
+
+\bibitem[Huang et al.(2023)]{huang2023}
+L. Huang, C.-C. Lin, K. Lin, L. Liang, L. Wang, J. Yuan, and Z. Liu.
+Neural Voting Field for camera-space 3D hand pose estimation.
+In \emph{CVPR}, pp.\ 8969--8978, 2023.
+
+\bibitem[Liu et al.(2022)]{liu2022continuous}
+Z. Liu, C. Pan, and H. Wang.
+Continuous gesture sequences recognition based on few-shot learning.
+\emph{International Journal of Aerospace Engineering}, 2022:7868142, 2022. \url{https://doi.org/10.1155/2022/7868142}.
+
+\bibitem[Mahdikhanlou and Ebrahimnezhad(2022)]{mahdikhanlou2022deforming}
+K. Mahdikhanlou and H. Ebrahimnezhad.
+3D object deforming and manipulating through dynamic hand gestures.
+\emph{Entertainment Computing}, 43:100507, 2022. \url{https://doi.org/10.1016/j.entcom.2022.100507}.
+
+\bibitem[Materzynska et al.(2019)]{materzynska2019jester}
+J. Materzynska, G. Berger, I. Bax, and R. Memisevic.
+The Jester dataset: A large-scale video dataset of human gestures.
+In \emph{ICCV Workshops}, 2019.
+
+\bibitem[Moon et al.(2020)]{moon2020interhand}
+G. Moon, S.-I. Yu, H. Wen, T. Shiratori, and K. M. Lee.
+InterHand2.6M: A dataset and baseline for 3D interacting hand pose estimation from a single RGB image.
+In \emph{ECCV}, pp.\ 548--564, 2020. \url{https://mks0601.github.io/InterHand2.6M/}.
+
+\bibitem[Schluesener and Buecker(2022)]{schluesener2022fast}
+N. Schluesener and M. Buecker.
+Fast learning of dynamic hand gesture recognition with few-shot learning models.
+arXiv:2212.08363, 2022. \url{https://arxiv.org/abs/2212.08363}.
+
+\bibitem[Snell et al.(2017)]{snell2017}
+J. Snell, K. Swersky, and R. S. Zemel.
+Prototypical networks for few-shot learning.
+In \emph{Advances in Neural Information Processing Systems}, 30, 2017.
+\url{https://arxiv.org/abs/1703.05175}.
+
+\bibitem[Vaswani et al.(2017)]{vaswani2017}
+A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez,
+L. Kaiser, and I. Polosukhin.
+Attention is all you need.
+In \emph{Advances in Neural Information Processing Systems}, 30, 2017.
+\url{https://arxiv.org/abs/1706.03762}.
+
+\bibitem[Veldhuijzen et al.(2024)]{veldhuijzen2024shrec}
+B. Veldhuijzen, R. C. Veltkamp, O. Ikne, et al.
+SHREC 2024: Recognition of dynamic hand motions molding clay.
+\emph{Computers \& Graphics}, 123:104012, 2024. \url{https://doi.org/10.1016/j.cag.2024.104012}.
+
+\bibitem[Yang et al.(2024)]{yang2024depthanything}
+L. Yang, B. Kang, Z. Huang, Z. Zhao, X. Xu, J. Feng, and H. Zhao.
+Depth Anything V2.
+In \emph{Advances in Neural Information Processing Systems}, 37, 2024. \url{https://arxiv.org/abs/2406.09414}.
+
+\bibitem[Yu et al.(2023)]{yu2023acr}
+Z. Yu, S. Huang, C. Fang, T. P. Breckon, and J. Wang.
+ACR: Attention collaboration-based regressor for arbitrary two-hand reconstruction.
+In \emph{CVPR}, pp.\ 12955--12964, 2023. \url{https://arxiv.org/abs/2303.05938}.
+
+\bibitem[Zhang et al.(2020)]{zhang2020}
+F. Zhang, V. Bazarevsky, A. Vakunov, A. Tkachenka, G. Sung,
+C.-L. Chang, and M. Grundmann.
+MediaPipe Hands: On-device real-time hand tracking.
+\emph{arXiv:2006.10214}, 2020. \url{https://arxiv.org/abs/2006.10214}.
+
+\bibitem[Zimmermann and Brox(2017)]{zimmermann2017hand}
+C. Zimmermann and T. Brox.
+Learning to estimate 3D hand pose from single RGB images.
+In \emph{ICCV}, pp.\ 4903--4911, 2017. \url{https://arxiv.org/abs/1705.01389}.
+\end{thebibliography}
+\end{document}

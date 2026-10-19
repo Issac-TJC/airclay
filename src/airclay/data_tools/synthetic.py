@@ -62,10 +62,37 @@ def make_fixtures(root):
         (path / "annotations.json").write_text(json.dumps({"verified": True, "verification_note": "Synthetic plumbing fixture only", "segments": annotations}, indent=2))
 
 
+def hover_frames(fps=30, repetitions=1):
+    """Repeatable ten-tip preview: motion, one missing tip, edge, lost hand, return."""
+    frames = []
+    for _ in range(repetitions):
+        for phase in ("all", "move", "missing_tip", "edge", "missing_hand", "return"):
+            for i in range(round(fps)):
+                dx = .025 * math.sin(i / fps * math.pi * 2) if phase == "move" else 0
+                hands = {"Left": hand(.42 + dx, .52, side="Left"),
+                         "Right": hand(.58 + dx, .52)}
+                if phase == "missing_tip":
+                    # No invented per-joint confidence: a truncated landmark array
+                    # makes the pinky unavailable to the preview serializer.
+                    hands["Left"]["image"] = hands["Left"]["image"][:20]
+                elif phase == "edge":
+                    hands["Right"]["image"][8][0] = 1.1
+                elif phase == "missing_hand":
+                    del hands["Left"]
+                frames.append({"timestamp_ms": len(frames) * 1000 / fps,
+                               "hands": hands, "dominant": "Right"})
+    return frames
+
+
 def simulate(args, cfg):
     from airclay.interaction.protocol import Sender
     from airclay.interaction.runner import Pipeline
-    frames, _ = demo_frames(cfg["fps"], args.repetitions)
+    if cfg.get("interaction_version", 1) == 2 and cfg.get("preview_profile") == "hand_preview":
+        frames = hand_preview_frames(cfg["fps"], args.repetitions)
+    elif cfg.get("interaction_version", 1) == 2:
+        frames = hover_frames(cfg["fps"], args.repetitions)
+    else:
+        frames, _ = demo_frames(cfg["fps"], args.repetitions)
     sender, pipeline = Sender(cfg), Pipeline(cfg)
     start = time.monotonic()
     try:
@@ -79,3 +106,28 @@ def simulate(args, cfg):
     finally:
         sender.close()
     print("Synthetic interaction sent. This does not test camera recognition.")
+
+
+def hand_preview_frames(fps=30, repetitions=1):
+    """Open -> pinch -> open, then a lost hand and recovery, with local depth."""
+    frames = []
+    for _ in range(repetitions):
+        for i in range(round(8 * fps)):
+            t = i / fps
+            closure = max(0., min(1., t - 1, 5 - t))
+            hands = {}
+            for side, x in (("Left", .32), ("Right", .68)):
+                h = hand(x, .42, side=side)
+                closed = hand(x, .42, True, side)
+                p = np.asarray(h["image"])
+                p[4] = p[4] * (1 - closure) + np.asarray(closed["image"])[4] * closure
+                # Visual local articulation; it is never interpreted as root depth.
+                for j in range(1, 21):
+                    p[j, 2] = .025 * math.sin(t * 1.5) * (j % 4) / 3
+                h["image"] = p.tolist()
+                h["world"] = ((p - p[0]) * .7).tolist()
+                hands[side] = h
+            if 6 <= t < 7:
+                del hands["Left"]
+            frames.append({"timestamp_ms": len(frames) * 1000 / fps, "hands": hands, "dominant": "Right"})
+    return frames
