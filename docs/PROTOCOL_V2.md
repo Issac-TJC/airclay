@@ -18,7 +18,7 @@
 | `session` / `seq` | 长度不超过 100 的 session 字符串 / 非负整数递增序号 |
 | `timestamp_ms` / `sent_ms` | 本机 monotonic 毫秒，必须为有限数值 |
 | `dominant` | `Left` 或 `Right`，只表示控制角色，不改变手身份或颜色 |
-| `coordinate_space` | `mirrored_image_normalized` |
+| `coordinate_space` | `mirrored_image_normalized` 或 `camera_image_normalized` |
 | `depth_available` | 固定 `false` |
 | `hands` | 必须包含 `Left`、`Right` 两个槽位 |
 
@@ -45,7 +45,9 @@ MediaPipe 的 handedness score 不是关节追踪置信度，不写入深度或�
 
 ## 坐标、显示与安全边界
 
-- 摄像头图像在检测前水平镜像一次，预览与传输共用镜像后的关键点；不再反射 x。
+- 新相机帧保留原始方向，标记 `mirrored=false`，使用 `camera_image_normalized`。
+  预览与传输共用关键点方向，不反射 x。旧帧缺少标记时保留 `mirrored_image_normalized`。
+  已安装的旧 Blender 插件需要重新打包安装以接受新坐标空间值。
 - 归一化图像原点在左上，x 向右、y 向下。Blender WINDOW 区域像素为
   `(x * region.width, (1-y) * region.height)`，不使用整个窗口尺寸或 CSS 像素。
 - Left/Right 指解剖学左右手。左蓝、右橙；惯用手变更不交换颜色或指尖身份。

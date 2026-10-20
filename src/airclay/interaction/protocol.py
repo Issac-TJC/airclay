@@ -13,6 +13,7 @@ FINGERTIPS = {"thumb": 4, "index": 8, "middle": 12, "ring": 16, "pinky": 20}
 FINGER_LABELS = dict(zip(FINGERTIPS, "TIMRP"))
 HAND_COLORS = {"Left": (.2, .6, 1., 1.), "Right": (1., .5, .15, 1.)}
 IMAGE_SPACE = "mirrored_image_normalized"
+CAMERA_IMAGE_SPACE = "camera_image_normalized"
 LOCAL_HAND_SPACE = "mediapipe_hand_centered_m"
 HAND_PROFILE = "hand_preview"
 
@@ -50,9 +51,9 @@ def valid_xy(point):
 
 
 def image_to_region(point, width, height):
-    """Mirrored image: x right, y down. Blender WINDOW region: x right, y up.
+    """Preview image: x right, y down. Blender WINDOW region: x right, y up.
 
-    Input has already been mirrored before detection; never mirror x again.
+    Input already uses the chosen camera orientation; never mirror x again.
     Hand IDs denote anatomical hands, independent of dominant-hand role.
     """
     if not valid_xy(point) or width <= 0 or height <= 0:
@@ -66,7 +67,8 @@ def _validate_preview(packet):
     if packet.get("profile") == HAND_PROFILE:
         expected.add("local_world_space")
     if (set(packet) != expected or packet["profile"] not in ("hover2d", HAND_PROFILE)
-            or packet["coordinate_space"] != IMAGE_SPACE or packet["depth_available"] is not False):
+            or packet["coordinate_space"] not in (IMAGE_SPACE, CAMERA_IMAGE_SPACE)
+            or packet["depth_available"] is not False):
         raise ValueError("Unsupported v2 preview profile")
     if not finite_number(packet["sent_ms"]):
         raise ValueError("Invalid send time")
@@ -135,7 +137,8 @@ def build_packet(frame, state, cfg, session, seq, sent_ms=None):
               "dominant": cfg["dominant"]}
     if version == PREVIEW_VERSION:
         profile = cfg.get("preview_profile", "hover2d")
-        packet.update(profile=profile, coordinate_space=IMAGE_SPACE, depth_available=False)
+        space = IMAGE_SPACE if frame.get("mirrored", True) else CAMERA_IMAGE_SPACE
+        packet.update(profile=profile, coordinate_space=space, depth_available=False)
         if profile == HAND_PROFILE:
             packet.update(local_world_space=LOCAL_HAND_SPACE, hands=skeleton_hands(frame))
         else:

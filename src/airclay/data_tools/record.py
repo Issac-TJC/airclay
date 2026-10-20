@@ -1,24 +1,68 @@
 import json
 import re
+import shutil
+import tempfile
 import time
 from pathlib import Path
 from airclay.config import ROOT
 
 
 def record(args, cfg):
-    from airclay.tracking.camera import Camera, preview
-    import cv2
+    from .guided import RecordingCancelled, RoundSchedule, record_guided
+    from .recording_guide import show_recording_guide
     if not all(re.fullmatch(r"[A-Za-z0-9_-]+", v) for v in (args.subject, args.session)):
         raise ValueError("Subject/session identifiers must contain only letters, numbers, _ and -")
+    if args.guided:
+        RoundSchedule(1, args.repetitions, getattr(args, "prepare_seconds", 5))
     folder = Path(args.output or ROOT / "data") / f"{args.subject}_{args.session}"
-    folder.mkdir(parents=True, exist_ok=False)
+    if folder.exists():
+        raise FileExistsError(f"Recording already exists: {folder}")
+    if not show_recording_guide(args, cfg):
+        print("Recording cancelled before starting; nothing saved.")
+        return
+    # Keep unfinished sessions out of the dataset and make explicit Q cancellation
+    # safe: only this invocation's uniquely named staging directory is removed.
+    staging_root = folder.parent / ".inprogress"
+    staging_root.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f"{folder.name}-", dir=staging_root))
     metadata = {"version": 1, "subject": args.subject, "session": args.session,
                 "dominant": cfg["dominant"], "fps": cfg["fps"], "synthetic": False,
-                "mirrored": True, "created": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
-    (folder / "metadata.json").write_text(json.dumps(metadata, indent=2))
+                "mirrored": False, "created": time.strftime("%Y-%m-%dT%H:%M:%S%z")}
+    if args.guided:
+        metadata.update(guided=True, repetitions=args.repetitions,
+                        prepare_seconds=getattr(args, "prepare_seconds", 5),
+                        timeline="accepted_takes")
+    (staging / "metadata.json").write_text(json.dumps(metadata, indent=2))
+    try:
+        n = record_guided(args, cfg, staging) if args.guided else _record_free(args, cfg, staging)
+        # Reserve a new destination before publishing. Existing recordings are
+        # never replaced, even if one was created while this camera was running.
+        folder.mkdir()
+        try:
+            staging.replace(folder)
+        except OSError:
+            try:
+                folder.rmdir()  # Only removes the empty directory we just reserved.
+            except OSError:
+                pass
+            raise
+    except RecordingCancelled:
+        shutil.rmtree(staging)
+        print("Recording discarded; nothing saved. Run the command again to start from round 1.")
+        return
+    except BaseException:
+        print(f"Recording was not finalized. Recovery files are preserved at: {staging}")
+        raise
+    print(f"Recorded {n} frames: {folder}\nReview with: airclay annotate '{folder}'")
+
+
+def _record_free(args, cfg, folder):
+    from airclay.tracking.camera import Camera, preview
+    from .guided import RecordingCancelled
+    import cv2
     camera, video, sender, pipeline = None, None, None, None
     segments, last_label, start, elapsed, n = [], "idle", None, 0., 0
-    total = 3 + args.repetitions*3*6 + 120 if args.guided else args.seconds
+    total = args.seconds
     try:
         if args.interact:
             from airclay.interaction.protocol import Sender
@@ -39,10 +83,6 @@ def record(args, cfg):
                 out.flush()
                 n += 1
                 label = "idle"
-                if args.guided and 3000 <= elapsed < 3000 + args.repetitions*3*6000:
-                    block = int((elapsed-3000)//6000)
-                    if (elapsed-3000)%6000 < 4000:
-                        label = ("sculpt", "orbit", "resize")[block % 3]
                 if n == 1 or label != last_label:
                     if segments:
                         segments[-1]["end_ms"] = elapsed
@@ -55,11 +95,13 @@ def record(args, cfg):
                         if not video.isOpened():
                             raise RuntimeError("Cannot create reference video")
                     video.write(image)
-                prompt = f"{elapsed/1000:.1f}s | rough prompt: {label} | Q: finish"
+                prompt = f"{elapsed/1000:.1f}s | rough prompt: {label}"
                 if elapsed < 3000:
                     prompt = f"Get ready: {max(1,3-int(elapsed/1000))} | open hands"
-                key = preview(image, frame, prompt)
-                if key in (ord("q"),27) or total and elapsed >= total*1000:
+                key = preview(image, frame, prompt, controls="S  Save & finish    Q  Discard & exit")
+                if key in (ord("q"), ord("Q"), 27):
+                    raise RecordingCancelled
+                if key in (ord("s"), ord("S")) or total and elapsed >= total*1000:
                     break
     finally:
         if segments:
@@ -72,4 +114,4 @@ def record(args, cfg):
         if sender:
             sender.close()
         cv2.destroyAllWindows()
-    print(f"Recorded {n} frames: {folder}\nReview with: airclay annotate '{folder}'")
+    return n

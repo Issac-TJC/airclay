@@ -22,8 +22,13 @@ class Predictor:
         torch.set_num_threads(1)
         self.features = Features()
         self.buffer = deque(maxlen=self.cfg["window"])
+        self.previous_take_id = None
 
     def step(self, frame):
+        take_id = frame.get("take_id")
+        if take_id != self.previous_take_id:
+            self.buffer.clear()
+            self.previous_take_id = take_id
         self.buffer.append(self.features.step(frame))
         if len(self.buffer) < self.buffer.maxlen:
             return "idle"

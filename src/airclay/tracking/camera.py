@@ -1,4 +1,4 @@
-"""Mirrored camera input and temporal assignment of MediaPipe detections."""
+"""Raw camera input and temporal assignment of MediaPipe detections."""
 import itertools
 import time
 
@@ -7,7 +7,7 @@ from airclay.interaction.protocol import HAND_COLORS
 
 
 def mirror_camera_image(image):
-    """Mirror once, before detection; preview and transport use that same image."""
+    """Return a mirrored copy; the live capture path does not use this helper."""
     return image[:, ::-1].copy()
 
 
@@ -74,7 +74,6 @@ class Camera:
         ok, bgr = self.cap.read()
         if not ok:
             raise RuntimeError("Camera stopped delivering frames")
-        bgr = mirror_camera_image(bgr)
         t = max(self.last_t + 1, int(time.monotonic() * 1000))
         self.last_t = t
         rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
@@ -86,6 +85,7 @@ class Camera:
                                "image": [[p.x, p.y, p.z] for p in image],
                                "world": [[p.x, p.y, p.z] for p in world]})
         frame = {"timestamp_ms": t, "hands": self.matcher.update(detections, t),
+                 "mirrored": False,
                  "inference_ms": (time.perf_counter() - start) * 1000,
                  "dominant": self.cfg["dominant"]}
         return frame, bgr
@@ -95,7 +95,7 @@ class Camera:
         self.cap.release()
 
 
-def preview(image, frame, text):
+def preview(image, frame, text, controls=""):
     import cv2
     height, width = image.shape[:2]
     edges = ((0,1),(1,2),(2,3),(3,4),(0,5),(5,6),(6,7),(7,8),
@@ -109,6 +109,15 @@ def preview(image, frame, text):
         for point in p:
             cv2.circle(image, point, 3, color, -1)
         cv2.putText(image, side, p[0], cv2.FONT_HERSHEY_SIMPLEX, .5, color, 1)
-    cv2.putText(image, text, (12, 26), cv2.FONT_HERSHEY_SIMPLEX, .55, (255,255,255), 2)
+    for row, line in enumerate(text.splitlines()):
+        position = (12, 26 + row * 26)
+        cv2.putText(image, line, position, cv2.FONT_HERSHEY_SIMPLEX, .55, (0,0,0), 3, cv2.LINE_AA)
+        cv2.putText(image, line, position, cv2.FONT_HERSHEY_SIMPLEX, .55, (255,255,255), 1, cv2.LINE_AA)
+    controls = controls.splitlines()
+    for row, line in enumerate(controls):
+        text_width = cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, .45, 1)[0][0]
+        position = (max(12, width - 14 - text_width), height - 14 - (len(controls) - row - 1) * 22)
+        cv2.putText(image, line, position, cv2.FONT_HERSHEY_SIMPLEX, .45, (0,0,0), 3, cv2.LINE_AA)
+        cv2.putText(image, line, position, cv2.FONT_HERSHEY_SIMPLEX, .45, (220,220,220), 1, cv2.LINE_AA)
     cv2.imshow("AirClay camera (Q to stop)", image)
     return cv2.waitKey(1) & 0xff

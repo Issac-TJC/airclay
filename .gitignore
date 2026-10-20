@@ -8,6 +8,8 @@ __pycache__/
 assets/*.task
 data/*
 !data/.gitkeep
+!data/README.md
+!data/reference.mp4
 runs/*
 !runs/.gitkeep
 dist/

@@ -20,6 +20,8 @@ class Resampler:
         t = frame["timestamp_ms"]
         if self.previous and t <= self.previous["timestamp_ms"]:
             raise ValueError("Frame timestamps must strictly increase")
+        if self.previous and frame.get("take_id") != self.previous.get("take_id"):
+            self.next_t, self.previous = None, None
         if self.next_t is None:
             self.next_t = float(t)
         output = []
@@ -28,6 +30,8 @@ class Resampler:
             valid = source is not None and self.next_t - source["timestamp_ms"] <= self.max_gap
             output.append({"timestamp_ms": self.next_t,
                            "hands": source.get("hands", {}) if valid else {},
+                           "take_id": frame.get("take_id"),
+                           "mirrored": (source or frame).get("mirrored", True),
                            "dominant": frame.get("dominant", "Right")})
             self.next_t += self.period
         self.previous = frame
@@ -39,8 +43,13 @@ class Features:
         self.previous = None
         self.previous_t = None
         self.previous_pair = None
+        self.previous_take_id = None
 
     def step(self, frame):
+        take_id = frame.get("take_id")
+        if take_id != self.previous_take_id:
+            self.previous = self.previous_t = self.previous_pair = None
+            self.previous_take_id = take_id
         d = frame.get("dominant", "Right")
         sides = [d, "Left" if d == "Right" else "Right"]
         parts, wrists = [], []

@@ -9,6 +9,18 @@
 - `annotations.json`：`verified` 和 `segments`；每个区间为 start_ms（包含）、end_ms（不包含）、label。
 - 可选 `reference.mp4`：仅作为人工参考，关键点原始时间戳为时间真值。视频按目标帧率封装，在掉帧时不保证和真实时钟一致，不应用视频帧号直接生成标签。
 
+引导录制以 sculpt → orbit → resize 各一次为一轮，默认 20 轮。每轮先准备 5 秒，每个动作 4 秒加 2 秒松手，然后暂停等待 R 重录或 N / Space / Enter 接受。`--prepare-seconds` 调整每轮（以及最后自然动作段）的准备时间。最后一轮接受后再录 2 分钟自然动作。预览同时显示当前动作、下一动作及倒计时；到达最后一个动作时提示即将暂停。
+
+引导录制额外保存 `recording_takes.json`，列出轮数、尝试次数、decision（accepted / rejected / interrupted）、complete、帧数以及纳入正式时间轴后的起止位置。每次尝试的原始关键点、粗标签和可选视频单独保留在 `takes/round_XX_take_YY/`，自然动作保存在 `takes/natural/`；`take.json` 记录该次选择。这些目录不是独立 session，不参与 subject split。
+
+根目录的正式文件只拼接接受的尝试；重录淘汰的尝试及暂停帧不进入这些文件。`timestamp_ms` 是去除暂停和重录后的相对时间，各帧另外保留 `capture_timestamp_ms`（原始单调时钟）和 `take_id`（所属尝试）。每轮内部保留实际帧间隔。重采样、运动速度和模型窗口在 take 边界重新开始，训练窗口不跨 take。引导粗标签始终 verified=false，人工确认前应检查是否完成了要求的全部轮次。
+
+每次录制前必须点击说明窗口的 Continue；点击之前不打开摄像头、不创建录制文件。运行中的数据暂存在输出目录的 `.inprogress/` 下，完整结束后才发布为正式 session。Q / Esc 放弃整个本次录制并清理其暂存文件，不影响以前完成的 session。非用户主动放弃的异常会保留恢复文件并打印位置；这些嵌套暂存目录不参加 subject split。自由录制在达到 `--seconds` 或按 S 时保存，Q 同样丢弃。
+
+新录制的检测输入、视频、关键点与预览统一使用摄像头原始方向，不翻转画面或交换模型标签。
+metadata 和各帧标记 `mirrored=false`，表示程序未镜像输入。左右手按身体定义。
+旧录制不自动转换，缺少帧内方向标记时保留原有镜像坐标约定；混合训练前须核验并统一数据。
+
 没有区间覆盖的时间视为 idle。区间不可重叠。V 只表示人工确认，不会自动检验动作意图是否正确。每次 S 保存会保留上一次 annotations.previous.json。
 
 ## 标签定义

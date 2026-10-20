@@ -157,3 +157,17 @@ def test_hover_pipeline_never_activates_operations_and_simulation_is_repeatable(
 def test_preview_config_is_opt_in():
     assert config()["interaction_version"] == 1
     assert config("configs/hover.json")["interaction_version"] == 2
+
+
+@pytest.mark.parametrize("profile", ["hover2d", "hand_preview"])
+def test_unmirrored_recording_retains_its_coordinates_during_preview_replay(profile):
+    # Replay config can differ from the recording; the frame owns its orientation.
+    cfg = {**config(), "interaction_version": 2, "preview_profile": profile}
+    frame = {"timestamp_ms": 0, "mirrored": False, "hands": {"Right": hand(.2, .5)}}
+    sample, state = Pipeline(cfg).step(frame)[0]
+    p = build_packet(sample, state, cfg, "unmirrored", 0)
+    assert p["coordinate_space"] == "camera_image_normalized"
+    assert validate(json.loads(encode_packet(p))) == p
+    point = p["hands"]["Right"]["image"][8] if profile == "hand_preview" else p["hands"]["Right"]["fingertips"][1]["xy"]
+    assert point[0] == pytest.approx(.2)
+    assert image_to_region(point, 800, 600)[0] == pytest.approx(160)

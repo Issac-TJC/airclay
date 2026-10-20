@@ -71,6 +71,8 @@ class Windows:
             seq = len(self.sequences)
             self.sequences.append(x)
             for end in range(cfg["window"] - 1, len(x), stride):
+                if timed[end-cfg["window"]+1].get("take_id") != timed[end].get("take_id"):
+                    continue
                 self.index.append((seq, end))
                 self.targets.append(label_at(timed[end]["timestamp_ms"], ann))
         self.window = cfg["window"]

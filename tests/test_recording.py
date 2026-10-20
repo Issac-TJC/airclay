@@ -9,6 +9,7 @@ def test_interactive_recording_keeps_live_timestamps(monkeypatch, tmp_path):
     import cv2
     import airclay.tracking.camera as camera_module
     import airclay.interaction.protocol as protocol
+    import airclay.data_tools.recording_guide as guide
     from airclay.data_tools.record import record
 
     frames, _ = demo_frames()
@@ -43,7 +44,8 @@ def test_interactive_recording_keeps_live_timestamps(monkeypatch, tmp_path):
             pass
 
     monkeypatch.setattr(camera_module, "Camera", FakeCamera)
-    monkeypatch.setattr(camera_module, "preview", lambda image, frame, text: ord("q") if frame is frames[-1] else -1)
+    monkeypatch.setattr(guide, "show_recording_guide", lambda *args: True)
+    monkeypatch.setattr(camera_module, "preview", lambda image, frame, text, **kw: ord("s") if frame is frames[-1] else -1)
     monkeypatch.setattr(protocol, "Sender", FakeSender)
     monkeypatch.setattr(cv2, "destroyAllWindows", lambda: None)
     args = SimpleNamespace(subject="p01", session="s01", output=str(tmp_path),
@@ -55,3 +57,5 @@ def test_interactive_recording_keeps_live_timestamps(monkeypatch, tmp_path):
     saved = [json.loads(line) for line in (tmp_path / "p01_s01/frames.jsonl").read_text().splitlines()]
     assert saved[0]["timestamp_ms"] == 0
     assert saved[-1]["timestamp_ms"] == original_times[-1] - original_times[0]
+    metadata = json.loads((tmp_path / "p01_s01/metadata.json").read_text())
+    assert metadata["mirrored"] is False
