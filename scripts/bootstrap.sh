@@ -9,5 +9,7 @@ if [ -f requirements.lock ]; then
 else
   .venv/bin/python -m pip install -e '.[dev]'
 fi
+# Do not depend on editable-install .pth files retaining their visibility flags.
+install -m 755 scripts/airclay-launcher.sh .venv/bin/airclay
 .venv/bin/python scripts/download_model.py
 .venv/bin/airclay doctor
