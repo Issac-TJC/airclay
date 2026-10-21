@@ -39,6 +39,9 @@ def main():
     p.add_argument("--interact", action="store_true", help="Drive Blender with this same camera stream while recording")
     p = sub.add_parser("annotate")
     p.add_argument("recording")
+    p = sub.add_parser("review", help="Review reference videos with current labels, pausing after each round")
+    p.add_argument("recordings", nargs="+")
+    p.add_argument("--autoplay", action="store_true", help="Start the first round when opening a session")
     p = sub.add_parser("split")
     p.add_argument("data_root")
     p.add_argument("--output", default="data/split.json")
@@ -78,6 +81,9 @@ def main():
         elif args.command == "annotate":
             from .data_tools.annotate import annotate
             annotate(args)
+        elif args.command == "review":
+            from .data_tools.review import review
+            review(args)
         elif args.command == "split":
             from .data_tools.dataset import create_split
             print(json.dumps(create_split(args.data_root,args.output,args.seed,args.allow_small),indent=2))

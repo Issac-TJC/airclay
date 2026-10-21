@@ -1,0 +1,13 @@
+{
+  "archives": {
+    "airclay-data-v1.zip": {
+      "sha256": "db54bbb22c2fff8e16d6b7e6d6d47e45fde7196a2459e7def96311833b6b8104",
+      "bytes": 225735379
+    },
+    "airclay-videos-v1.zip": {
+      "sha256": "633d69c8c91f921dd5b2306e2a85e51b69ca32fd51a3e4583ccb448eea3af7b5",
+      "bytes": 460583973
+    }
+  },
+  "manifest_sha256": "074880e104d6ae1d084ce23546409e8a7cd44ac00219c3def6948c866372cae8"
+}

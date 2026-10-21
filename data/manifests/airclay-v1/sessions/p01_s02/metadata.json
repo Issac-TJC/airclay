@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "subject": "p01",
+  "session": "s02",
+  "dominant": "Right",
+  "fps": 30,
+  "synthetic": false,
+  "mirrored": false,
+  "created": "2026-10-21T00:02:35-0400",
+  "guided": true,
+  "repetitions": 20,
+  "prepare_seconds": 5,
+  "timeline": "accepted_takes"
+}

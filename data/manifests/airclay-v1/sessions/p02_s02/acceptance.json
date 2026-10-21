@@ -1,0 +1,10 @@
+{
+  "reviewer": "Zhijian Wang",
+  "confirmation_recorded_at": "2026-10-21T05:30:42.259582+00:00",
+  "scope": "Entire session",
+  "verified": true,
+  "annotations_sha256": "bb7fe46754c568b8975f4b5fa7ffda9c95bb5f27bae6fd7a6e7d2d835400e399",
+  "capture_smoothing": 1.0,
+  "configuration_evidence": "User confirmation",
+  "additional_filter": "none"
+}

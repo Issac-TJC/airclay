@@ -6,6 +6,12 @@
 
 ## 快速运行
 
+### Shared human dataset
+
+The reviewed dataset is shared separately from Git. See [the handoff guide](docs/DATA_HANDOFF.md)
+for archive extraction, NumPy loading, file verification and the common preprocessing contract.
+Full exports live in `data/processed/`; small version snapshots live in `data/manifests/`.
+
 本机已配置项目 `.venv`。分别在两个终端运行：
 
 ```bash
@@ -128,6 +134,16 @@ Collision + Soft Body Plasticity 推压物体，关闭后保留形状。先把�
 左右手按身体定义，不按画面位置定义；`dominant` 只选择操作角色。旧录制保持原样。
 
 ### 2. 人工检查标签
+
+只看原视频与当前标签、记录疑点，可以打开验收播放器：
+
+```bash
+.venv/bin/airclay review data/p01_s02 data/p02_s01 data/p02_s02 data/p03_s01 data/p03_s02
+```
+
+Space 开始/暂停，每轮结束自动暂停；N/P 下一轮/上一轮，R 重播，A/D 逐帧，-/+ 调速，Tab 切换 session，Q 退出。F 暂停并将当前帧、标签、时间记入该 session 的 `human_review_flags.jsonl`，方便之后校正。验收播放器按关键点记录中的实际时间播放原视频，使用同一帧的标签；它不修改标签，也不自动设置 `verified`。重点检查标签切换是否对应开始操作与松手、操作手是否正确，出画时是否仍持续操作。自然动作也需检查。
+
+需要修改标签或在整份 session 人工验收后设置验证标记时，使用标注器：
 
 ```bash
 .venv/bin/airclay annotate data/p01_s01

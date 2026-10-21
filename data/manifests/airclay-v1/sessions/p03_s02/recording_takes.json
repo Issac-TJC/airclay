@@ -1,0 +1,251 @@
+[
+  {
+    "take_id": "takes/round_01_take_01",
+    "round": 1,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 455,
+    "start_ms": 0,
+    "end_ms": 22000.0
+  },
+  {
+    "take_id": "takes/round_02_take_01",
+    "round": 2,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 488,
+    "start_ms": 22000.0,
+    "end_ms": 44000.0
+  },
+  {
+    "take_id": "takes/round_03_take_01",
+    "round": 3,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 480,
+    "start_ms": 44000.0,
+    "end_ms": 66000.0
+  },
+  {
+    "take_id": "takes/round_04_take_01",
+    "round": 4,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 487,
+    "start_ms": 66000.0,
+    "end_ms": 88000.0
+  },
+  {
+    "take_id": "takes/round_05_take_01",
+    "round": 5,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 460,
+    "start_ms": 88000.0,
+    "end_ms": 109965.33333333333
+  },
+  {
+    "take_id": "takes/round_06_take_01",
+    "round": 6,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 502,
+    "start_ms": 109965.33333333333,
+    "end_ms": 131965.3333333333
+  },
+  {
+    "take_id": "takes/round_07_take_01",
+    "round": 7,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "rejected",
+    "complete": true,
+    "frames": 506
+  },
+  {
+    "take_id": "takes/round_07_take_02",
+    "round": 7,
+    "kind": "round",
+    "attempt": 2,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 482,
+    "start_ms": 131965.3333333333,
+    "end_ms": 153965.3333333333
+  },
+  {
+    "take_id": "takes/round_08_take_01",
+    "round": 8,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 466,
+    "start_ms": 153965.3333333333,
+    "end_ms": 175965.3333333333
+  },
+  {
+    "take_id": "takes/round_09_take_01",
+    "round": 9,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 508,
+    "start_ms": 175965.3333333333,
+    "end_ms": 197965.3333333333
+  },
+  {
+    "take_id": "takes/round_10_take_01",
+    "round": 10,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 507,
+    "start_ms": 197965.3333333333,
+    "end_ms": 219965.3333333333
+  },
+  {
+    "take_id": "takes/round_11_take_01",
+    "round": 11,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 506,
+    "start_ms": 219965.3333333333,
+    "end_ms": 241965.3333333333
+  },
+  {
+    "take_id": "takes/round_12_take_01",
+    "round": 12,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 505,
+    "start_ms": 241965.3333333333,
+    "end_ms": 263965.3333333333
+  },
+  {
+    "take_id": "takes/round_13_take_01",
+    "round": 13,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 489,
+    "start_ms": 263965.3333333333,
+    "end_ms": 285965.3333333333
+  },
+  {
+    "take_id": "takes/round_14_take_01",
+    "round": 14,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "rejected",
+    "complete": true,
+    "frames": 505
+  },
+  {
+    "take_id": "takes/round_14_take_02",
+    "round": 14,
+    "kind": "round",
+    "attempt": 2,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 493,
+    "start_ms": 285965.3333333333,
+    "end_ms": 307965.3333333333
+  },
+  {
+    "take_id": "takes/round_15_take_01",
+    "round": 15,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 508,
+    "start_ms": 307965.3333333333,
+    "end_ms": 329965.3333333333
+  },
+  {
+    "take_id": "takes/round_16_take_01",
+    "round": 16,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 489,
+    "start_ms": 329965.3333333333,
+    "end_ms": 351965.3333333333
+  },
+  {
+    "take_id": "takes/round_17_take_01",
+    "round": 17,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 508,
+    "start_ms": 351965.3333333333,
+    "end_ms": 373963.6666666666
+  },
+  {
+    "take_id": "takes/round_18_take_01",
+    "round": 18,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 466,
+    "start_ms": 373963.6666666666,
+    "end_ms": 395963.6666666666
+  },
+  {
+    "take_id": "takes/round_19_take_01",
+    "round": 19,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 503,
+    "start_ms": 395963.6666666666,
+    "end_ms": 417963.6666666666
+  },
+  {
+    "take_id": "takes/round_20_take_01",
+    "round": 20,
+    "kind": "round",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 436,
+    "start_ms": 417963.6666666666,
+    "end_ms": 439963.6666666666
+  },
+  {
+    "take_id": "takes/natural",
+    "round": 21,
+    "kind": "natural",
+    "attempt": 1,
+    "decision": "accepted",
+    "complete": true,
+    "frames": 2530,
+    "start_ms": 439963.6666666666,
+    "end_ms": 563963.6666666666
+  }
+]

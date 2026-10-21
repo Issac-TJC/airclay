@@ -10,6 +10,12 @@ data/*
 !data/.gitkeep
 !data/README.md
 !data/reference.mp4
+!data/manifests/
+data/manifests/**
+!data/manifests/**/
+!data/manifests/**/*.json
+!data/manifests/**/*.csv
+!data/manifests/**/*.md
 runs/*
 !runs/.gitkeep
 dist/
