@@ -20,7 +20,7 @@ assets are distributed under CC BY-SA 4.0 with their attribution.
 Run `.venv/bin/python scripts/prepare_smooth_hand.py` after the base extraction
 to generate the reference-style blue hand. It welds seams, smooths geometry and
 skin weights, extends/tapers the wrist and unifies the palm weights. See
-`smooth_manifest.json` for its source and output hashes. This derived mesh is
+`blender_addon/airclay_blender/assets/smooth_manifest.json` for its source and output hashes. This derived mesh is
 also CC BY-SA 4.0.
 
 See `blender_addon/airclay_blender/assets/HAND_LICENSE.txt` for the attribution and

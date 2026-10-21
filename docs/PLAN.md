@@ -1,65 +1,98 @@
-# AirClay 实施方案
+# AirClay implementation
 
-本文下述操作与训练方案描述可运行的 **v1 基线**。最终双手并发交互目标和阶段顺序以
-`IMPLEMENTATION_CHECKLIST.md` 为准：目标是辅助手旋转/缩放对象，主手同时雕刻；
-这与 v1 的视图旋转、笔刷半径调整不同。
+## Scope
 
-M1 扩展通过 `configs/hover.json` 显式启用 UDP v2 `hover2d`：外部程序从两手各 21 个
-图像关键点提取五个固定指尖，Blender 独立计算十个第一可见表面的 hover 候选。
-只支持 hidden/hover；camera-space 深度、contact/latched、五指抓取和并发操作留待后续阶段。
-v1 默认行为与训练数据保持兼容，v2 预览不运行意图分类器。具体消息和坐标约定见 `PROTOCOL_V2.md`。
+The implemented v1 baseline has four exclusive intents: idle, sculpt, orbit, and
+resize. Sculpt moves a local surface patch in the view plane, orbit rotates the
+view, and resize changes brush radius. Public-data pretraining, few-shot adaptation,
+calibrated depth, and concurrent object manipulation remain planned work. See the
+[roadmap](IMPLEMENTATION_CHECKLIST.md) for those milestones.
 
-## 目标
+UDP v2 provides `hover2d` and `hand_preview`. Both bypass the intent model and
+controller. Hand preview also supports a separate, default-off
+[plasticity experiment](PLASTICITY.md) using manual depth.
 
-普通单目摄像头驱动 Blender 双手分工建模。主手控制表面定位与拉伸，副手控制环绕视角，双手捏合控制笔刷范围。课程贡献是意图时序建模及误操作评估；关键点检测和网格形变不冒充原创深度学习模块。
+## Data flow
 
-## 模块和数据流
+1. OpenCV reads the original camera image. MediaPipe Tasks runs in VIDEO mode,
+   returning up to two sets of 21 image and hand-local world landmarks.
+2. `HandMatcher` assigns Left/Right slots using detector handedness and wrist
+   continuity. The default live path applies EMA with alpha 0.45 when the previous
+   observation is less than 150 ms old. `record_raw.json` sets alpha to 1.0.
+3. A causal resampler produces 30 Hz samples from the most recent observation.
+   Observations older than 150 ms become missing. It never interpolates from future
+   frames. Resampling, feature velocities, and learned windows restart at take boundaries.
+4. Rules, MLP, or GRU propose one intent to the shared controller. Learned inference
+   uses argmax logits; probability smoothing and calibrated rejection are absent.
+5. Full-state packets go to `127.0.0.1:8765`. Blender receives on its main-thread
+   modal timer, processing at most 64 datagrams per tick.
+6. Blender applies view, brush, or mesh updates and stores committed operations in
+   its AirClay undo history.
 
-1. 外部 Python 用 OpenCV 读取镜像摄像头画面，MediaPipe Tasks 的 VIDEO 模式提取双手关键点。画面和显示使用同一镜像约定。
-2. 根据左右手分类先验与上一时刻手腕位置分配稳定槽位，再进行指数平滑。左右手近距离交叉、严重遮挡仍可能出错，需要真人测试。
-3. 因果重采样到 30 Hz，间隔超过 150 ms 的缺失输入设为空。训练与推理均不使用未来帧插值。
-4. 规则、单帧 MLP 或 GRU 提出 idle/sculpt/orbit/resize 意图，共享同一个操作状态机。物理捏合阈值也用于重新张手解锁；已开始的操作不能被另一个模式接管。
-5. UDP 发送完整状态到 127.0.0.1:8765。Blender 通过主线程 modal timer 接收，每次最多处理 64 个包，拒绝旧序号与过期状态。
-6. 接收端在世界坐标中计算笔刷沿网格边的测地近似距离，将世界位移转换为网格局部位移。每帧从抓取快照重算；提交时进入有限撤销历史。
+The program does not mirror capture or swap detector labels. Left/Right slots are
+intended to identify physical hands and must be checked during collection. Temporal
+matching can still fail during crossings. MediaPipe world landmarks describe each
+hand locally; they do not locate both hands in a shared camera coordinate system.
 
-MediaPipe 的 world landmarks 以每只手自身为中心，不用于两手之间的全局深度比较。双手距离使用图像坐标。
+## Controller and transport
 
-## 接口
+A neutral observation with both hands open arms the controller. Pinch uses the 2D
+thumb-tip/index-tip distance divided by wrist/middle-MCP distance, closing below
+0.30 and opening above 0.45. The controller waits 200 ms before entering an active
+mode, allowing a second pinch to request resize. The chosen mode stays locked.
+Rule release commits immediately; learned release requires 100 ms of idle output.
+A missing required hand pauses motion and cancels the operation after 300 ms.
 
-视频帧：`timestamp_ms`、`dominant`、`hands.Left/Right`。每只手包含 21×3 的 `image` 与 `world` 数组，以及 `valid`。不存在的手可省略。
+V1 packets contain `version`, `session`, `seq`, `timestamp_ms`, `sent_ms`,
+`operation_id`, `mode`, `paused`, `outcome`, `dominant`, and `hands`. Each hand carries
+`valid` and a normalized index-finger `pointer`. Idle packets repeat `commit` or
+`cancel` so that losing one terminal packet does not leave an operation active.
 
-UDP v1：`version/session/seq/timestamp_ms/sent_ms/operation_id/mode/paused/outcome/dominant/hands`。每只手只传 `valid` 与归一化 `pointer`。`outcome` 为 null、commit 或 cancel，在空闲状态持续发送，避免丢失单个结束事件。
+Sequences must increase within a session. A new session rolls back an unfinished
+v1 operation and must send idle before starting another. An unexplained operation-ID
+change also rolls back the old operation. The receiver rejects stale/future send
+times, retired sessions, and duplicate or out-of-order packets; 300 ms without a
+valid packet triggers rollback. Version/profile changes require a new session.
+The receiver returns dominant-hand settings. Live tracking resets its pipeline and
+opens a new session when that setting changes.
 
-同一会话序号严格增加；新会话先回滚旧操作，看到 idle 后才能开始。不同操作编号切换但没有收到旧结束状态时保守回滚旧操作。超过 300 ms 无新消息也回滚。Blender 面板通过回包通知追踪端惯用手变化；追踪端重置识别与操作状态，开启新会话。
+See [PROTOCOL_V2.md](PROTOCOL_V2.md) for preview packets and coordinate limits.
 
-## 形变与交互
+## Geometry
 
-默认对象为 10,242 顶点的单位 icosphere；不自动修改用户已有对象。面板允许选择其他网格，但首版验收以演示球为准。始终要求 Object Mode。
+The demo is a unit icosphere with 10,242 vertices. Other Object Mode meshes can be
+selected, but the sphere is the baseline test target.
 
-笔刷点由屏幕射线命中得到；以命中面的顶点为 Dijkstra 种子，沿网格边扩展到半径 R。权重为 `1 - 3(d/R)^2 + 2(d/R)^3`，R 以外为零。断开的表面不受影响。
+A viewport ray selects a surface face. Dijkstra distances along mesh edges,
+measured in world space and seeded at the hit face, define the affected region.
+For distance `d < R`, the weight is `1 - 3(d/R)^2 + 2(d/R)^3`; it is zero outside
+radius `R`. Disconnected regions receive no weight.
 
-拉伸固定起始视角、半径与抓取平面。世界位移上限 0.5，半径范围 0.08–0.60。旋转沿模型中心，双手开合按初始距离比例缩放半径。默认保留 30 次操作，Ctrl/Cmd+Z 由接收器处理项目内撤销，不与 Blender 的编辑模式撤销混用。
+Sculpt freezes the initial view, brush radius, and drag plane. Each update applies
+weighted displacement to the onset snapshot, capped at 0.5 world units, then
+converted to mesh-local coordinates. Orbit rotates the view around the object's
+origin. Resize uses the ratio of current to initial 2D index-finger separation and
+clamps brush radius to 0.08–0.60. History retains 30 committed operations.
 
-## 默认模型
+## Features and models
 
-主手在前、副手在后的 140 维特征：每手局部关键点 63 维、手腕位置 2 维、速度 2 维、捏合距离 1 维、有效 mask 1 维，加两手距离及速度 2 维。左手局部 x 反射，保留手腕的实际画面位置。
+Hands are ordered dominant first. Each contributes 63 wrist-centered, palm-scale
+normalized local coordinates, two image wrist coordinates, two wrist velocities,
+a 2D pinch ratio, and a validity mask. Two-hand wrist distance and its velocity
+bring the total to 140 features. Left local x is reflected to normalize chirality;
+absolute image wrist positions are retained.
 
-GRU：24×140 输入，两层 128 hidden，dropout 0.2，输出 4 类。MLP 只使用当前帧的 135 维静态特征，避免混入显式历史速度。在线窗口未满时输出 idle。
+| Backend | Input and architecture |
+|---|---|
+| Rules | Pinch hysteresis and hand roles |
+| MLP | Last frame's 135 non-velocity features; 128-unit ReLU layer, dropout 0.2, four logits |
+| GRU | 24 × 140 input; two unidirectional 128-unit layers, dropout 0.2, four-logit head |
 
-AdamW lr=0.001，batch=64，最多 50 epoch，patience=8。训练窗口步长 3，验证步长 1。类别权重只从训练集估计。使用验证集 Macro-F1 保存最优权重；checkpoint 包含特征版本、类别顺序和训练配置，加载时核对。
+Both learned backends return idle until the 24-frame buffer is full. Training uses
+AdamW, learning rate 0.001, batch size 64, gradient clipping at 1, at most 50 epochs,
+and patience 8. Training window stride is 3; validation stride is 1. Class weights
+come from training labels. The best validation Macro-F1 checkpoint records model
+configuration, feature version, feature dimension, and label order.
 
-## 实施与交付边界
-
-A：模拟数据驱动真实 Blender 操作。B：摄像头与规则交互。C：采集、标注、训练、评估和模型接入。D：真人采集、正式实验、真实动作效果验证由团队参与完成。E：运行文档、插件 ZIP、验证记录。
-
-没有真人数据时，不声称 GRU 优于规则，不把合成样例准确率写入课程结论。性能目标为至少 20 Hz 和中位响应低于 250 ms；组合判定约占 200 ms，因此需要按测量结果讨论识别准确率与延迟取舍。
-
-## 参考资源
-
-- [MediaPipe Hand Landmarker Python](https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker/python)
-- [MediaPipe Hands 论文](https://arxiv.org/abs/2006.10214)
-- [Blender Python API](https://docs.blender.org/api/current/)
-- [Blender Python 线程限制](https://docs.blender.org/api/5.0/info_gotchas_threading.html)
-- [PyTorch GRU](https://docs.pytorch.org/docs/stable/generated/torch.nn.GRU.html)
-
-使用官方发布的库与模型；没有复制第三方手势插件代码。
+Offline readers preserve stored coordinates. They do not reapply the camera's EMA;
+raw recordings therefore need an agreed preprocessing step for filter comparisons.

@@ -1,67 +1,125 @@
-# 数据与实验协议
+# Data and experiments
 
-## 文件格式
+## Current dataset and planned split
 
-每个 `data/<subject>_<session>/` 包含：
+The v1 handoff has six reviewed sessions from p01, p02, and p03, with 59,913 frames.
+No formal split is frozen. The midterm pilot plans five participants with two
+sessions each, split 3/1/1 by subject using seed 42. Keep both sessions of a person
+in the same partition. One held-out participant supports a pilot result, not a
+broad claim about unseen users.
 
-- `metadata.json`：version=1、subject、session、dominant、fps、synthetic、mirrored 和创建时间。
-- `frames.jsonl`：每行一个时间戳严格递增的帧，时间相对本次录像起点，单位毫秒。
-- `annotations.json`：`verified` 和 `segments`；每个区间为 start_ms（包含）、end_ms（不包含）、label。
-- 可选 `reference.mp4`：仅作为人工参考，关键点原始时间戳为时间真值。视频按目标帧率封装，在掉帧时不保证和真实时钟一致，不应用视频帧号直接生成标签。
+Use [data/README.md](../data/README.md) for collection and
+[DATA_HANDOFF.md](DATA_HANDOFF.md) for the shared archives. Each guided session
+contains 20 rounds of sculpt, orbit, and resize, plus two minutes of natural
+movement. Report actual counts and capture rates from the inventory, rather than
+assuming the configured 30 FPS was achieved.
 
-引导录制以 sculpt → orbit → resize 各一次为一轮，默认 20 轮。每轮先准备 5 秒，每个动作 4 秒加 2 秒松手，然后暂停等待 R 重录或 N / Space / Enter 接受。`--prepare-seconds` 调整每轮（以及最后自然动作段）的准备时间。最后一轮接受后再录 2 分钟自然动作。预览同时显示当前动作、下一动作及倒计时；到达最后一个动作时提示即将暂停。
+## Recording format
 
-引导录制额外保存 `recording_takes.json`，列出轮数、尝试次数、decision（accepted / rejected / interrupted）、complete、帧数以及纳入正式时间轴后的起止位置。每次尝试的原始关键点、粗标签和可选视频单独保留在 `takes/round_XX_take_YY/`，自然动作保存在 `takes/natural/`；`take.json` 记录该次选择。这些目录不是独立 session，不参与 subject split。
+Each `data/<subject>_<session>/` contains:
 
-根目录的正式文件只拼接接受的尝试；重录淘汰的尝试及暂停帧不进入这些文件。`timestamp_ms` 是去除暂停和重录后的相对时间，各帧另外保留 `capture_timestamp_ms`（原始单调时钟）和 `take_id`（所属尝试）。每轮内部保留实际帧间隔。重采样、运动速度和模型窗口在 take 边界重新开始，训练窗口不跨 take。引导粗标签始终 verified=false，人工确认前应检查是否完成了要求的全部轮次。
+| File | Contents |
+|---|---|
+| `metadata.json` | Version, subject/session IDs, dominant hand, configured FPS, synthetic/mirrored flags, creation time, and guided settings when used |
+| `frames.jsonl` | Strictly increasing millisecond timestamps and per-hand 21 × 3 image/world arrays |
+| `annotations.json` | `verified` and non-overlapping `[start_ms, end_ms)` label intervals |
+| `reference.mp4` | Optional reference video, one encoded frame per recorded sample |
+| `recording_takes.json` | Guided attempts, decisions, completeness, frame counts, and accepted timeline ranges |
 
-每次录制前必须点击说明窗口的 Continue；点击之前不打开摄像头、不创建录制文件。运行中的数据暂存在输出目录的 `.inprogress/` 下，完整结束后才发布为正式 session。Q / Esc 放弃整个本次录制并清理其暂存文件，不影响以前完成的 session。非用户主动放弃的异常会保留恢复文件并打印位置；这些嵌套暂存目录不参加 subject split。自由录制在达到 `--seconds` 或按 S 时保存，Q 同样丢弃。
+Completed guided sessions retain attempts under `takes/round_XX_take_YY/` and
+natural movement under `takes/natural/`. The root timeline includes accepted takes
+only. Pauses and rejected takes are excluded; within-take timing is preserved.
+Frames retain `capture_timestamp_ms` and `take_id`. Take directories are not
+independent sessions. Shared exports omit rejected-attempt samples.
 
-新录制的检测输入、视频、关键点与预览统一使用摄像头原始方向，不翻转画面或交换模型标签。
-metadata 和各帧标记 `mirrored=false`，表示程序未镜像输入。左右手按身体定义。
-旧录制不自动转换，缺少帧内方向标记时保留原有镜像坐标约定；混合训练前须核验并统一数据。
+Capture begins after the instruction window's final Continue. In-progress files
+live under `.inprogress/`. A complete run publishes the session; Q/Esc discards the
+current session, including accepted rounds. Other interruptions retain recovery
+files. Free recording saves at `--seconds` or S; its initial labels are all idle.
 
-没有区间覆盖的时间视为 idle。区间不可重叠。V 只表示人工确认，不会自动检验动作意图是否正确。每次 S 保存会保留上一次 annotations.previous.json。
+New capture uses the original camera orientation and records `mirrored=false`.
+Legacy frames without that flag retain the earlier mirrored coordinate convention
+in replay. Check and reconcile orientation before combining datasets.
 
-## 标签定义
+Video is encoded at the configured frame rate, which can differ from acquisition
+cadence. Match video frame indices to recorded frames, then use landmark timestamps
+for labels and event measurements. Uncovered annotation time is idle. S in the
+annotator saves the previous labels to `annotations.previous.json`; V only records
+human confirmation.
 
-| 类别 | 开始 | 结束 |
+## Labels
+
+| Label | Start | End |
 |---|---|---|
-| idle | 无操作意图 | 明确进入另一个操作意图 |
-| sculpt | 主手有意捏合准备抓取 | 有意释放，动作完成 |
-| orbit | 副手有意捏合准备旋转 | 有意释放 |
-| resize | 有意开始双手组合 | 其中一只手有意释放 |
+| idle | No intended operation | An active intent begins |
+| sculpt | Intended dominant-hand pinch to edit | Intended release |
+| orbit | Intended auxiliary-hand pinch to orbit | Intended release |
+| resize | Intended two-hand pinch combination | Intended release of either hand |
 
-标签代表人的操作意图，不以规则触发时刻为真值。记录短暂碰指、自然摆手、左右手交叉、动作速度变化与暂时遮挡。模糊区间由至少两名成员共同查看，不根据测试模型的结果改标签。
+Label intended actions from the recording, not rule-trigger times. Include natural
+motion, incidental finger contact, crossings, speed changes, and brief occlusion.
+Review ambiguous boundaries with another team member. The video reviewer can flag
+issues but does not edit labels or set `verified`; use the annotator for those steps.
 
-## 划分与公平比较
+## Preprocessing and model comparison
 
-目标 10 人，每人 2 个 session，每个 session 每类至少 20 次，额外至少 2 分钟自然动作。使用固定 seed=42 将受试者分为 6/2/2；相邻窗口和同一受试者不能跨集合。
+Retain identity-assigned raw recordings with capture `smoothing=1.0`. This disables
+application-level EMA, while MediaPipe's internal temporal processing remains.
+Derive None, EMA, and Kalman variants later from the same coordinates, validity,
+labels, and timestamps. Reset filters at session/take boundaries and after long
+losses; use observed time intervals and keep missing hands invalid.
 
-规则、MLP、GRU 使用同一前端、平滑、时钟和状态机。规则阈值只在验证集调整。随机种子分别为 42、43、44；报告模型测试集指标均值和标准差，并保留每次原始结果。规则无需重复训练。
+The planned main comparison uses EMA with alpha 0.45. Consistent offline/online
+filtering still needs to be integrated: current training, evaluation, and replay
+use stored coordinates without adding EMA, while default live tracking applies it.
+Resampling and feature/window extraction follow filtering. Existing resampling,
+velocities, and learned windows reset at take boundaries; no training window crosses
+a take. The controller and event scorer currently run across the accepted session
+timeline rather than resetting separately for each take.
 
-## 指标的精确定义
+Rules, MLP, and GRU use the same data, split, sampling rate, and controller. TCN and
+Kalman comparisons remain planned. Tune rule thresholds and filter parameters on
+validation data only. Train learned models with seeds 42, 43, and 44; report means
+and standard deviations with each run's results retained. Seed variation is not
+variation across independent participants. Freeze settings before test evaluation.
 
-- 分类报告：每个 30 Hz 时刻的原始识别结果，包含四类及 Macro-F1；另保存经过状态机后的结果。
-- 事件：把连续的非 idle 同类区间合并。真值与预测按相同类别的最大正时间重叠一对一匹配。
-- 误操作：没有匹配真值的预测事件；每分钟误操作数按整段录像时长归一化。
-- 漏操作：没有匹配预测的真值事件。
-- 模式错误：与不同类别真值发生时间重叠的预测区间数。
-- 意外提前释放：匹配预测结束比真值早超过 100 ms 的事件数。碎片化会同时反映在额外误操作数中。
-- 开始／结束延迟：匹配预测边界减真值边界，负值表示提前。未匹配事件不参与延迟中位数，必须同时报告漏检。
+## Implemented metrics
 
-这些是课程原型的可复现操作定义，不是所有手势数据集通用的官方指标。
+Classification is computed at resampled timestamps for idle/sculpt/orbit/resize.
+`classification` contains raw predictions; `state_classification` contains controller
+outputs. The confusion matrix uses raw predictions. Event metrics use controller
+outputs and resampled truth labels.
 
-## 下游任务
+- Consecutive non-idle samples of the same class form an event.
+- In chronological truth order, each event is greedily matched to the unused
+  same-class prediction with the greatest positive overlap.
+- Unmatched predictions are false operations; unmatched truth events are misses.
+  False operations per minute uses the full evaluated time span, including idle.
+- `wrong_mode_segments` counts predicted events overlapping a different truth class.
+- Early release means a matched prediction ends more than 100 ms before truth.
+- Onset/offset delay is predicted minus true boundary. Negative values mean early
+  activation/release. Medians exclude unmatched events, so report misses alongside them.
 
-给每名测试者同一个单位球、相同初始视角和半径。要求：拉出左右两个凸起、旋转检查、改变笔刷后再修改一次、撤销一次、保存结果。记录耗时、撤销次数、错误模式次数、是否完整完成。
+These are the evaluator's definitions, not a standard benchmark protocol. Keep the
+original annotation intervals for analyses that need finer timing than the 30 Hz grid.
 
-不要仅比较模型离线准确率。按参与者轮换 rules/MLP/GRU 顺序，避免所有人都先熟悉规则模式再测试 GRU。正式评估前提供同样时长的练习。
+## Planned Blender task and timing
 
-## 性能与手工验收
+Use the same unit sphere, initial view, and brush radius. Ask each participant to
+make two protrusions, orbit the view, resize the brush, make another edit, undo once,
+and save. The midterm plan is a rule-based pilot with equal practice time. Record
+completion time, success, extra undo operations, wrong modes, and failure cases.
+A later model comparison should counterbalance backend order across participants.
 
-`track --seconds 600 --output runs/ten_minute.json` 运行十分钟，只保存时序与性能日志，不保存图像。日志包括关键点推理时间、特征/分类时间、有效手数和模式。Blender 接收器停止时保存 `runs/blender_latency.json`。
+`track --seconds 600 --output runs/ten_minute.json` records timing and mode logs,
+not images. The v1 receiver writes `runs/blender_latency.json` when stopped in a
+project checkout. Tracker `classifier_ms` includes resampling, classification,
+controller work, and sending. Receiver `transport_apply_ms` starts at send time;
+`capture_apply_ms` starts at the resampled input timestamp. Neither measures
+physical gesture onset to visible screen response, and preview timing does not
+include the later plasticity update in the timer tick.
 
-`capture_apply_ms` 是某个输入样本到网格更新的时间，**不等于手势开始到触发的延迟**；后者还包含状态机组合判定和模型窗口信息。连续相机健康检查不能替代真人操作验收。
-
-检查列表：首次张手解锁；双捏优先；拉伸不旋转；短暂丢手暂停；长时间丢手回滚；断开进程回滚；重连不延续旧操作；两种惯用手；跨手遮挡；Cmd/Ctrl+Z 和重做；正常 Blender 保存。
+Measure camera-to-display latency independently. The goals of at least 20 Hz and
+median latency below 250 ms remain unverified. Manual checks should cover arming,
+two-hand arbitration, mode locking, brief/long hand loss, stream interruption,
+reconnection, both dominant-hand choices, crossings, undo/redo, and saving.

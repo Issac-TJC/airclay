@@ -29,9 +29,9 @@ Start a normal session with video:
   --video --output data
 ```
 
-Use a unique subject ID for each participant and a different session ID for each session, such as s01 and s02. Existing recordings are never overwritten. Saved sessions go to data/p01_s01/ in this example, not runs/.
+Use a unique subject ID for each participant and a different session ID for each session, such as s01 and s02. Sessions are saved to data/p01_s01/ in this example; existing recordings are never overwritten. The raw config disables application-level EMA so filtering can be added later. MediaPipe internal processing remains enabled.
 
-A mandatory instruction window opens first. Read its pages and click Continue on the final page to open the camera and begin. The window omits this command section. One session contains 20 accepted rounds, then 2 minutes of natural movement. A complete run saves automatically. The default active recording time is about 9 minutes 45 seconds, plus pauses and retries.
+A mandatory instruction window opens first. Read its pages and click Continue on the final page to open the camera and begin. The window omits this command section. One session contains 20 accepted rounds, then 2 minutes of natural movement. A complete run saves automatically. The command above takes about 9 minutes 24 seconds, excluding pauses and retries. With the default 5-second preparation, it takes about 9 minutes 45 seconds.
 
 ## SCULPT and ORBIT
 
@@ -39,17 +39,17 @@ SCULPT: pinch your dominant hand (Right by default) and move it. Keep the other 
 
 ORBIT: pinch your other hand (Left by default) and move it. Keep the dominant hand open.
 
-Use one continuous pinch during each 4-second action. **There is no fixed movement direction:** vary left, right, up, down, or diagonally across rounds. **Avoid moving in the same direction every time. Use small, smooth movements.**
+Use one continuous pinch during each 4-second action. Vary left, right, up, down, or diagonal movement across rounds. Use small, smooth movements.
 
 **Do not return to the starting position while still pinching.** If you approach the frame edge, stop moving and hold the pinch. Wait for OPEN HANDS, then release and return to your starting position.
 
-**You must be back in idle, with both hands open, BEFORE the OPEN HANDS countdown ends.** Do not start the next action early.
+Return to idle with both hands open before OPEN HANDS ends. Wait for the next action prompt.
 
 ## RESIZE
 
 Pinch both hands together. Choose ONE direction for this round: move your hands apart OR bring them closer together. Keep both pinches held throughout the action.
 
-**Do only one expansion or one contraction per round.** Do not repeatedly stretch, move back and forth, or release and pinch again. Alternating apart and together across rounds is fine; both are labeled resize.
+Use one expansion or contraction per round, holding both pinches until OPEN HANDS. Alternating apart and together across rounds is fine; both are labeled resize.
 
 For an outward movement, start with your hands a little closer. For an inward movement, start a little farther apart. Stay inside the frame and stop moving when needed. At OPEN HANDS, release and reset to idle before its countdown ends.
 

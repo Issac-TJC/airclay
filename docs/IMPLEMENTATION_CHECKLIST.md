@@ -1,420 +1,184 @@
-# AirClay 实现与验证 Checklist
-
-更新日期：2026-09-10
-
-本文按组件记录 AirClay 的当前状态、下一步实现和验收方法。只有在实现已经合入，并且对应的自动测试或真人验收证据已保存后，才将项目勾选为完成。
-
-## 状态说明
-
-- [x] 已实现，并且已有自动测试、Blender 集成测试或验证记录。
-- [ ] 尚未实现，或虽然已有部分代码但还没有满足本项验收标准。
-- “已有基线”表示当前程序已经提供较简单的实现，但不代表扩展目标已经完成。
-
-所有验证结果应写入 [`VALIDATION.md`](VALIDATION.md)，机器可读结果保存在 `runs/`。合成数据只能验证程序流程，不能用来证明手势模型或深度模型有效。
-
-M1 更新：已增加显式启用的 UDP v2 `hover2d` 和十指二维预览，默认仍为 v1。
-本次只实现 hidden/hover，没有 camera-space 深度、contact/latched 或并发操作。
-自动验证与源码校验值见 `runs/m1/hover_gui.json`，真人验收仍单独待办。
-旧 `runs/track_latency*` 含来源未对应到当前源码的 v2 状态，不作为本次完成证据。
-
-已完成的独立扩展包括实时骨架驱动的仿真手，以及默认关闭的 Blender 原生碰撞塑性实验，
-实现与证据集中记录在第 13 节。**这些扩展不属于 M0–M6 的必需完成项，也不作为阶段推进或最终交付的前置条件。**
-它们使用未标定的显示深度，不替代 M2 深度/contact、M3 五指稳定接触或 M4 并发操作的验收。
-
-## 最终交互定义
-
-- 主手负责雕刻。首个扩展版本仍以主手食指作为实际笔刷，其他主手指尖光标用于接触反馈和后续多指工具，不同时产生五个笔刷。
-- 辅助手的五个指尖均接触物体表面并稳定保持后，进入“抓住物体”状态。
-- 辅助手抓住物体后，手掌整体旋转控制物体绕自身中心旋转；拇指和食指的三维距离变化控制物体均匀缩放。
-- 主手雕刻可以与辅助手的旋转和缩放同时发生。辅助手旋转与缩放也可以在同一次抓取中同时发生。
-- “物体缩放”和“笔刷半径调整”是两个不同的量。五指抓取中的拇指-食指距离只缩放物体；笔刷半径保留面板控制，并在后续为其分配不会与物体缩放冲突的独立手势。
-- 坐标约定为摄像机空间 `+x` 向画面右侧、`+y` 向上、`+z` 远离摄像机；因此手向摄像机移动时 `Delta z < 0`。
-
-## 1. 工程环境与可运行基线
-
-### 实现
-
-- [x] 项目使用独立 `.venv`，不向 Blender 内置 Python 安装机器学习依赖。
-- [x] `airclay doctor/track/simulate/record/annotate/replay/train/evaluate` 命令已接入。
-- [x] MediaPipe Hand Landmarker 模型、来源和校验值已保存在 `assets/`。
-- [x] Blender 插件支持临时加载和 ZIP 打包。
-- [x] 规则模式在没有训练权重时可以完成拉伸、视图旋转和笔刷半径调整。
-- [x] MLP/GRU 的训练、保存、加载和评估流程可运行。
-
-### 验证
-
-- [x] Python 核心测试通过；验证范围见 [`VALIDATION.md`](VALIDATION.md)。
-- [x] Blender 无界面网格形变测试通过。
-- [x] 模拟 UDP 的 Blender GUI 测试通过，并生成可检查的 `.blend` 和渲染图。
-- [ ] 获得 macOS 摄像头权限后，完成一次真实摄像头规则模式演示，并保存对应源码版本的证据。
-- [ ] 连续运行摄像头和 Blender 10 分钟，无资源泄漏、持续卡顿或断流后残留操作。
-- [ ] 在第二台机器或干净环境中按 README 完整复现安装与运行。
-
-## 2. 双手检测、身份保持与基础特征
-
-### 实现
-
-- [x] 单个 RGB 摄像头同时请求最多两只手的 21 个关键点。
-- [x] 使用 handedness 先验和腕部时序连续性保持 Left/Right 槽位。
-- [x] 对关键点进行因果平滑，不跨长时间丢失区间插值。
-- [x] 保存图像关键点、每手局部 world landmarks、时间戳和有效性 mask。
-- [x] 训练和推理共用腕部中心化、手掌尺度归一化的特征代码。
-- [ ] 为每只手增加手级置信度、遮挡状态和连续丢失帧数；没有可靠的逐关节置信度时，不伪造该字段。
-- [x] 在镜像显示、MediaPipe handedness 和 Blender 左右手颜色之间建立一套单元测试覆盖的坐标约定（真人实际左右手判别仍按下述验证项验收）。
-- [x] 为五个指尖建立稳定 ID：`thumb=4`、`index=8`、`middle=12`、`ring=16`、`pinky=20`。
-
-### 验证
-
-- [x] 自动测试覆盖 handedness 分类短暂翻转时的手腕连续匹配。
-- [ ] 真人完成左右手交叉、互相遮挡、快速出入画面和一只手暂时消失测试。
-- [ ] 左右手交换惯用设置后，身份、颜色、意图和控制映射同时正确交换。
-- [ ] 记录至少 10 分钟的 hand-count、身份切换和丢失统计，人工检查所有异常区间。
-
-## 3. RGB 手部深度与三维位移
-
-当前状态：只有图像平面指针和每只手自身坐标系中的 MediaPipe world landmarks。尚未估计统一 camera-space 根深度，也没有把 `Delta z` 发送给 Blender。
-
-### 实现
-
-- [ ] 增加摄像机标定文件，保存图像尺寸、焦距或视场角、主点、畸变参数和标定日期。
-- [ ] 实现三距离用户校准：手掌分别位于约 30、45、60 cm，记录像素手掌宽度和已知距离。
-- [ ] 实现几何基线：根据标定焦距、用户手掌尺度和像素宽度估计腕部深度。
-- [ ] 接入 Depth Anything V2 Small 作为通用相对深度基线，只在手部 ROI 内取稳健统计量，并输出置信度。
-- [ ] 实现手部专用深度回归器：输入 RGB crop、二维关键点和相机参数，输出 camera-space 腕部深度及置信度。
-- [ ] 使用 RHD 的 RGB、深度、内参和 3D 关节训练深度头；使用固定抽样的 InterHand2.6M 5 FPS 双手数据验证遮挡和双手根深度。
-- [ ] 将全局腕部深度与 MediaPipe 的手内相对 3D 结构结合，得到十个指尖各自的 camera-space `xyz`。
-- [ ] 对 `x/y/z` 位移使用因果滤波、速度上限和异常值拒绝；滤波不得使用未来帧。
-- [ ] 深度低置信度时降级为二维控制：保留 `Delta x/Delta y`，冻结 `Delta z`，界面显示降级状态。
-- [ ] 录制格式升级为 v2，保存原始深度输出、滤波输出、置信度、相机标定 ID 和每个指尖的 camera-space 坐标。
-- [ ] 增加独立的深度训练与评估命令，checkpoint 保存数据版本、坐标约定、输入分辨率、归一化参数和相机模型。
-
-### 验证
-
-- [ ] 单元测试覆盖投影/反投影、坐标轴方向、单位换算和 `Delta z` 正负号。
-- [ ] 在 RHD/InterHand 固定测试子集上报告 wrist/root depth MAE、MPJPE 和前后方向准确率。
-- [ ] 在 30、45、60 cm 标定序列上分别测试，不允许把同一序列同时用于拟合和评估。
-- [ ] 静止手保持 10 秒，报告深度标准差和峰峰值；初始目标为抖动不超过 1.5 cm。
-- [ ] 执行至少 30 次明确的前移/后移动作，初始目标为方向判断准确率不低于 90%。
-- [ ] 比较几何基线、Depth Anything V2 和手部回归器，报告误差、抖动、失败帧率和每帧耗时。
-- [ ] 测量深度模块加入后的完整更新率；目标仍为至少 20 Hz，中位端到端延迟低于 250 ms。
-- [ ] 遮挡或深度突变时，Blender 不出现一次性大幅位移；低置信度降级行为有日志证据。
-
-## 4. 十指光标与物体表面锚点
-
-当前状态：默认 UDP v1 保留每手食指与单笔刷光标。显式启用 v2 `hover2d` 后，
-同时发送和绘制最多十个二维指尖，只显示第一可见表面的 hover；深度字段明确为空。
-
-### 实现：光标表示
-
-- [ ] 协议为左右手分别发送五个指尖的 `finger_id`、二维位置、camera-space `xyz`、有效性和深度置信度。
-- [x] v2 Blender 同时维护最多十个指尖光标，以 `(hand, finger_id)` 管理；v1 单笔刷仍保留。
-- [x] 左手使用蓝色系，右手使用橙色系；每根手指用 `T/I/M/R/P` 区分。
-- [ ] 光标至少包含 `hidden`、`hover`、`contact`、`latched` 四种视觉状态：无效时隐藏，候选点用半透明虚线，接触用实线，已用于操作的锚点高亮。
-- [x] M1 hover 光标半径按物体包围球尺度和视口摄像机距离投影，并设置显示尺寸上下限。
-- [ ] 面板提供“显示全部指尖”“显示 hover”“显示深度/置信度”的调试开关。
-
-### 实现：表面锚点判定
-
-对每个指尖独立执行以下顺序，只有全部必要条件满足才创建表面锚点：
-
-- [ ] **追踪有效**：所属手有效、指尖坐标有限、深度置信度达到配置阈值，且指尖位于当前 3D 视口内。
-- [x] **可见表面命中**：从该指尖像素生成视口射线，只接受 BVH 返回的第一个命中点；不得穿过前表面把光标放到背面。
-- [ ] **正面约束**：命中面法线与观察方向满足正面阈值；轮廓处使用较宽松阈值并降低置信度，而不是突然跳到背面。
-- [ ] **深度接近**：将指尖 camera-space 点通过标定变换映射到 Blender 工作空间，计算它与射线命中点沿视线方向的有符号间距 `g`。
-- [ ] **进入阈值**：初始默认在 `|g| <= 0.06R` 连续 3 帧时从 hover 进入 contact，其中 `R` 是物体包围球半径。
-- [ ] **退出迟滞**：接触后允许 `|g| <= 0.10R`；连续 5 帧超出、射线丢失或手失效才解除，避免边界闪烁。
-- [ ] **首次接触锁定**：指尖穿过虚拟表面时锁定第一个可见命中点；后续穿透量用于控制位移，不重新锚定到背面。
-- [ ] **局部坐标保存**：锚点保存为对象局部坐标、face ID、重心坐标、手 ID、手指 ID、创建时间和置信度，使物体旋转/缩放后仍能更新到正确表面。
-- [ ] **降级规则**：没有可靠深度时可以显示 hover 候选点，但不能产生五指抓取 contact；用户能从光标样式看出原因。
-- [ ] 所有阈值进入 `configs/default.json`，最终数值只根据验证集和真人手感测试调整。
-
-### 验证
-
-- [ ] 协议测试验证十个指尖乱序、缺失、NaN、越界和左右手交换均被正确处理。
-- [x] Blender 合成投影测试验证十个已知指尖分别落在预期表面位置，屏幕回投影误差小于 2 像素。
-- [x] 球体前后表面重叠时，光标只出现在第一个可见表面。
-- [ ] 指尖从表面边缘移出、短暂遮挡和重新出现时，不发生跨面跳跃或左右手串位。
-- [ ] 静止接触 10 秒，锚点不闪烁；记录 attach/detach 次数和表面位置抖动。
-- [ ] 真人逐根手指接触测试中，界面显示的手、手指和接触状态与视频一致。
-
-## 5. 双手意图同时识别与并发状态机
-
-当前状态：`Controller.mode` 只能是 `idle/sculpt/orbit/resize` 中的一个；进入模式后全局锁定，因此不能在雕刻时旋转或缩放。
-
-### 实现
-
-- [ ] 将单标签四分类改为多通道意图：至少包含 `sculpt_active`、`object_grip_active` 和 `brush_resize_active`；`idle` 由所有通道均未激活得到。
-- [ ] 规则后端和学习后端输出同一组每通道概率、起止事件和置信度。
-- [ ] 状态机改为每只手、每个通道独立的进入迟滞、退出迟滞、暂停和丢失计时，不再使用一个全局 mode 锁住所有行为。
-- [ ] 明确冲突规则：主手可雕刻；辅助手可抓取物体；两者可同时激活；同一只手同一时刻不能同时拥有雕刻和物体抓取角色。
-- [ ] 辅助手抓取中允许旋转和物体缩放同时产生；缩放不抢占旋转。
-- [ ] 接收端每帧先更新对象旋转/缩放，再把主手 camera-space 点变换到更新后的对象局部坐标，最后计算雕刻形变。
-- [ ] 并发操作采用一个复合事务：第一条通道开始时保存网格、对象 transform、视图和笔刷；全部通道结束后一次提交，断流则整体回滚。
-- [ ] 状态显示可同时呈现，例如 `SCULPT + GRIP + SCALE`，而不是只显示一个 mode。
-- [ ] 录制标注格式升级为重叠区间或逐通道布尔标签，支持 `sculpt` 与 `grip/scale` 同时为真。
-
-### 验证
-
-- [ ] 状态机真值表覆盖：仅雕刻、仅抓取、抓取并旋转、抓取并缩放、雕刻加旋转、雕刻加缩放、三者同时和全部释放。
-- [ ] 自动测试证明辅助手的新意图不能终止主手已经开始的雕刻，反之亦然。
-- [ ] 任一手短暂丢失只暂停其负责的输出；达到断流阈值后按复合事务规则回滚，不留下半次编辑。
-- [ ] 在物体持续旋转时保持主手食指接触，雕刻锚点不漂移到物体另一侧。
-- [ ] 对同一段录制进行重复回放，最终网格和对象 transform 数值一致。
-- [ ] Undo/redo 一次能够完整恢复一次并发交互前后的网格、旋转和缩放。
-
-## 6. 辅助手五指抓取与自然旋转
-
-当前状态：辅助手捏合后，根据单个食指二维位移修改 Blender 视图旋转；没有五指接触条件，也没有根据手掌姿态旋转物体。
-
-### 实现
-
-- [ ] 只有辅助手五个指尖均处于 `contact`，并连续稳定至少 150 ms，才进入 `object_grip_active`。
-- [ ] 抓取开始时保存五个对象局部锚点、五个 camera-space 指尖、手掌基向量、对象中心和对象初始 rotation。
-- [ ] 用腕部、食指掌指关节和小指掌指关节构造手掌局部坐标系与手掌法线。
-- [ ] 使用加权 Kabsch/Procrustes 求当前五个指尖相对起始指尖的最优刚体旋转；权重来自指尖和深度置信度。
-- [ ] 将 Kabsch 旋转与手掌姿态四元数进行置信度加权融合，减少近共面五点导致的翻转和对称球体上的歧义。
-- [ ] 首版只旋转目标对象，不根据抓取平移对象；旋转中心固定为对象包围盒中心，避免位置漂移。
-- [ ] 对四元数进行因果平滑，限制单帧最大角速度，并保证四元数符号连续。
-- [ ] 五指中任一指短暂失效时冻结当前旋转；超过退出迟滞后结束或取消抓取，不降级成单指旋转。
-- [ ] 保留当前单指 orbit 作为可配置 baseline，正式实验中与五指抓取旋转比较。
-
-### 验证
-
-- [ ] 数值测试向五个合成点施加已知 5、15、45 度旋转，恢复角度误差的初始目标为中位数小于 3 度。
-- [ ] 纯平移五个输入点时对象不旋转；纯旋转时对象中心不移动。
-- [ ] 手掌翻面、五点近共面和一个指尖异常时不产生 180 度跳变。
-- [ ] 真人分别做 yaw、pitch、roll，各方向与手掌动作一致，没有轴反转。
-- [ ] 五指未全部接触时旋转不会开始；接触稳定后开始，松开任一手指后按迟滞结束。
-- [ ] 与现有单指 orbit 做同一目标角度任务，记录完成时间、角度误差、过冲和误触发。
-
-## 7. 五指抓取中的拇指-食指缩放
-
-### 实现
-
-- [ ] 缩放只在 `object_grip_active` 中启用，避免普通捏合误缩放物体。
-- [ ] 抓取开始时保存拇指与食指的 camera-space 三维距离 `d0` 和对象初始 scale `s0`。
-- [ ] 使用三维距离比计算均匀缩放 `s = s0 * clamp(d/d0, 0.5, 2.0)`，而不是只用容易受手掌旋转影响的二维像素距离。
-- [ ] 深度不可靠时使用“拇指-食指距离 / 手掌尺度”的归一化二维距离降级，并在界面明确提示。
-- [ ] 设置约 3% 的死区、因果平滑和单帧缩放速度上限；每次抓取限制在 `0.5x--2.0x`，全局范围写入配置。
-- [ ] 围绕对象中心进行均匀缩放，不改变对象中心或引入非均匀 `x/y/z` scale。
-- [ ] 同一抓取中的旋转和缩放都从开始快照计算，避免逐帧累积漂移。
-- [ ] 物体缩放字段命名为 `object_scale`；现有笔刷半径继续命名为 `brush_radius`，协议、UI 和日志不得混用。
-
-### 验证
-
-- [ ] 合成测试输入已知距离比 `0.5/1.0/1.5/2.0`，对象 scale 与期望一致。
-- [ ] 保持三维拇指-食指距离不变并旋转手掌，物体 scale 基本不变。
-- [ ] 只改变拇指-食指距离时，对象中心和 rotation 不变。
-- [ ] 达到上下限时无抖动、反弹或数值越界。
-- [ ] 在主手持续雕刻时缩放物体，笔刷锚点仍位于同一对象局部区域。
-- [ ] 真人重复执行放大和缩小各 20 次，记录漏触发、误触发、过冲和最终比例误差。
-
-## 8. 雕刻、几何更新与并发坐标
-
-### 实现
-
-- [x] 通过视口射线与 BVH 获得可见表面命中点。
-- [x] 使用网格邻接和 Dijkstra 近似测地距离选择局部影响区域。
-- [x] 使用平滑衰减、操作起始快照和最大位移限制更新顶点。
-- [x] 支持 30 次项目内 undo/redo 和断流回滚。
-- [x] 当前二维版本将主手食指拖动映射到固定屏幕平面。
-- [ ] 深度版本改用食指 camera-space 三维位移，并转换到对象当前局部坐标。
-- [ ] 对象同时旋转/缩放时，雕刻始终相对于抓取的对象局部表面计算，不能依赖已过时的起始视图平面。
-- [ ] 为物体 scale 变化补偿笔刷世界半径，明确笔刷半径采用对象局部单位还是世界单位，并在配置和 UI 中保持一致。
-- [ ] 五指光标与实际雕刻笔刷分层绘制，避免用户误以为所有接触点都会形变网格。
-
-### 验证
-
-- [x] 现有测试覆盖权重边界、断开表面、最大位移和恢复。
-- [x] 现有 Blender 测试验证真实 10,242 顶点球体发生形变并能保存。
-- [ ] 用已知三维 `Delta x/y/z` 驱动球体，验证形变方向和幅度。
-- [ ] 对象旋转 90 度后重复相同对象局部拖动，形变仍发生在同一局部方向。
-- [ ] 旋转、缩放和雕刻同时进行 30 秒，不出现网格爆炸、锚点跳面或 NaN。
-- [ ] 连续并发操作、撤销、重做和保存后重新打开 `.blend`，状态与保存前一致。
-
-## 9. UDP v2 协议与 Blender 接收器
-
-当前状态：v1 消息包含单一 `mode`、一个 `operation_id`，以及每只手的一个二维食指 `pointer`。
-
-M1 已新增 v2 `hover2d` 子集，字段、版本隔离、包体限制及无深度语义见 `PROTOCOL_V2.md`；
-下述包含深度、意图和事务的完整 v2 目标仍待后续实现。
-
-### 实现
-
-- [ ] 定义 UDP v2 schema，并保留明确的版本拒绝行为；Blender 不应把 v1 数据误解为十指或深度数据。
-- [ ] 每只手发送五个指尖的二维位置、camera-space 坐标、有效性和深度置信度。
-- [ ] 消息发送多通道 intent 概率/状态，而不是单一互斥 mode。
-- [ ] 增加复合事务 ID、各通道起止状态、标定 ID、坐标单位和降级标记。
-- [ ] Blender 负责基于真实目标网格计算 surface hit/contact/anchor；追踪端负责手势和抓取意图，不伪造物体表面接触。
-- [ ] 持续发送完整当前状态；接收端继续拒绝旧序号、退休 session、过期包和非有限数值。
-- [ ] 估算最坏包体大小，确保低于安全 UDP payload；必要时使用紧凑数组并限制数值精度。
-- [ ] Blender 设置回包增加目标对象、惯用手和必要的视口/标定状态，同时保持所有 Blender API 调用在主线程。
-
-### 验证
-
-- [x] v1 已有乱序、重复序号、旧 session 和 NaN 拒绝测试。
-- [ ] v2 schema 测试覆盖指尖缺失、深度降级、多个并发 intent、事务结束和未知版本。
-- [ ] 随机丢包、乱序和重复包时，不会出现永久抓取、持续缩放或无法释放。
-- [ ] 断流超过 300 ms 时复合操作回滚；重连后必须重新完成中性姿态/接触条件。
-- [ ] 在 20--30 Hz 连续发送十指和深度数据 10 分钟，记录包大小、丢包率和 Blender apply time。
-
-## 10. 数据、标注与学习模型
-
-### 实现
-
-- [x] v1 录制、回放、区间标注和按受试者划分已经实现。
-- [x] v1 支持 `idle/sculpt/orbit/resize` 单标签数据以及 MLP/GRU 分类。
-- [x] 评估输出分类指标、混淆矩阵和连续事件指标。
-- [ ] 下载并记录 Jester、IPN HandS、SHREC 2024、RHD 的来源、许可、版本和文件校验值。
-- [ ] 为大型 HaGRID/InterHand 子集保存固定样本清单，而不是每次随机抽样。
-- [ ] 编写公共数据适配器，将 RGB、关键点、相机参数和原始标签转换为统一但不混淆坐标系的数据格式。
-- [ ] 实现公共数据上的动作原语预训练：idle、pinch/click、translation、push/pull、two-hand scale。
-- [ ] 实现 GRU/TCN sequence encoder 和 Prototypical Network episodic training。
-- [ ] 支持 1-shot、5-shot、10-shot support set，并只更新 projection head/prototypes。
-- [ ] 将意图训练改为 multi-label loss，支持 `sculpt` 与 `grip/scale` 重叠。
-- [ ] 标注工具支持多通道重叠区间、五指接触状态检查和深度校准片段。
-- [ ] 实现深度模型的数据加载、训练、checkpoint 和评估管线。
-- [ ] 对 v1 数据提供只读兼容或明确迁移脚本，禁止静默把单标签复制成错误的多标签真值。
-
-### 验证
-
-- [x] 现有测试覆盖训练/推理特征一致、受试者泄漏检查和 checkpoint 保存加载。
-- [ ] 公共数据预处理对同一输入重复运行时产生相同样本 ID、时间轴和特征。
-- [ ] support/query、train/val/test 在受试者和原始视频级别均无泄漏。
-- [ ] few-shot 实验比较 rules、MLP、from-scratch GRU、pretrained linear head 和 prototype adaptation。
-- [ ] 报告 1/5/10-shot 的 Macro-F1、每类 precision/recall、未知动作拒绝率和跨用户方差。
-- [ ] multi-label 评估同时报告每通道 F1、组合状态准确率、误触发/分钟、漏操作和提前释放。
-- [ ] 真实数据结论至少使用 3 个随机种子；合成 smoke checkpoint 不进入最终表格。
-
-## 11. Blender UI、调试信息与可观察性
-
-### 实现
-
-- [x] 面板显示连接状态、目标对象、惯用手、笔刷半径、撤销和重做。
-- [x] 当前单光标用颜色区分 idle、sculpt、orbit 和 resize。
-- [x] v2 预览使用十指光标，并提供左右手图例和手指标识；默认 v1 保留单笔刷。
-- [ ] 面板分别显示 `Sculpt`、`Grip`、`Rotate`、`Object scale`、`Brush radius` 状态。
-- [ ] 显示当前更新率、深度来源、深度置信度和二维降级状态。
-- [ ] 调试 overlay 可显示指尖 camera-space 坐标、表面间距 `g`、锚点 face ID 和 attach 计时。
-- [ ] 日志分别记录捕获、关键点、深度、意图、网络、锚点和 Blender 更新耗时。
-- [ ] 保存实验时写入当前配置、模型 checkpoint ID、标定 ID、对象初始状态和软件版本。
-
-### 验证
-
-- [ ] 不看终端即可判断每只手、每根手指是否被检测、是否 hover、是否接触以及当前启用的控制通道。
-- [ ] 深度失败、手丢失、UDP 断开和事务回滚均显示明确状态。
-- [ ] Overlay 在不同窗口尺寸、Retina 缩放和视图旋转下不偏移、不裁切。
-- [ ] 关闭调试 overlay 后，对更新率的影响可忽略；开启后记录额外开销。
-
-## 12. 分阶段验收顺序
-
-以下 M0–M6 保持主线验收范围与依赖顺序。第 13 节的仿真手及 experimental 物理碰撞独立记录；
-主线可在物理开关关闭的情况下完成验收，扩展的后续验证不阻塞任何里程碑。
-
-### M0：冻结当前基线
-
-- [x] 保存规则模式、单光标、互斥状态机和现有 Blender 操作的测试结果。
-- [x] 保留 v1 协议测试，便于判断后续重构是否破坏基础能力。
-
-### M1：十指二维 hover 光标
-
-- [x] v2 发送十个二维指尖，Blender 同时显示并区分左右手和手指。
-- [x] 暂不激活接触或操作，只验证身份、射线命中和第一可见表面。
-- [x] 十指投影、背面拒绝、边缘和丢指的自动测试通过，证据位于 `runs/m1/`。
-- [ ] 真人逐指、双手交叉/遮挡及惯用手切换验收；完成后进入 M2。
-
-### M2：深度、三维指尖和 contact anchor
-
-- [ ] 完成三距离标定和几何深度基线。
-- [ ] 十个指尖均有 camera-space 坐标、置信度和 hover/contact/latched 状态。
-- [ ] 通过静止抖动、前后方向、表面迟滞和遮挡测试后进入 M3。
-
-### M3：五指抓取旋转与缩放
-
-- [ ] 五指全部接触后可抓住并旋转对象。
-- [ ] 同一抓取中拇指-食指距离可缩放对象，旋转和缩放互不错误串扰。
-- [ ] 通过合成旋转/缩放数值测试和真人单手控制测试后进入 M4。
-
-### M4：主手雕刻与辅助手变换并发
-
-- [ ] 多通道状态机、复合事务和 UDP v2 全部接通。
-- [ ] 可边雕刻边旋转、边雕刻边缩放，以及三者同时进行。
-- [ ] 通过锚点稳定、断流回滚、确定性回放和 undo/redo 测试后进入 M5。
-
-### M5：公开数据预训练与 few-shot 个性化
-
-- [ ] 公共数据预处理、原语预训练、prototype adaptation 和 multi-label 评估完成。
-- [ ] 至少完成 1/5/10-shot 对比和几何/通用/手部深度对比。
-- [ ] 所有阈值只用验证集调整，测试集只运行最终冻结配置。
-
-### M6：最终交付
-
-- [ ] 五名团队成员或预定测试者完成固定 Blender 任务与问卷/日志记录。
-- [ ] 报告分类、连续事件、深度、延迟和下游任务指标，并列出失败案例。
-- [ ] 完成 10 分钟稳定性测试、干净环境安装、插件 ZIP、演示 `.blend` 和演示视频。
-- [ ] README、方案、实验协议、本 checklist 和验证记录与最终行为一致。
-
-## 13. 独立可选扩展（不纳入 M0–M6 必需项）
-
-本节记录已完成的扩展实现、已有自动验证及可选的后续试验。勾选仅表示对应扩展能力已实现并有证据，
-不增加主线交付要求，也不用于替代主线中尚未完成的标定、接触、抓取或并发验收。
-
-### 仿真手：实时骨架驱动的三维手型
-
-使用 [`configs/hands.json`](../configs/hands.json) 的 UDP v2 `hand_preview`，
-将每手 21 个二维关节和手内局部三维结构映射为 Blender 中的写实蒙皮手或简化手模型。
-显示根深度尚未标定；详细坐标和运行说明见 [`HAND_PREVIEW.md`](HAND_PREVIEW.md)。
-
-- [x] 两手分别绑定实时识别骨架；左蓝右橙，身份不随惯用手控制角色改变。
-- [x] `Hand model` 默认使用参考风格的浅蓝光滑手（每手 14,499 顶点），可选写实手（16,330 顶点）或简化手（876 顶点）；均复用网格，支持显示开关和深度调整。
-- [x] 光滑手焊接接缝、平滑表面、加长并收窄腕部，统一掌部蒙皮；修复手指弯至约 90° 时的朝向翻转，并提供可关闭的黄色指尖方向线。
-- [x] 接入 Elena FF 的 CC BY-SA 4.0 写实手模型及皮肤贴图，映射原蒙皮权重到追踪点；保存时内嵌贴图，插件包含资源、来源校验值与署名许可。
-- [x] `Flip hand front/back` 默认开启，适配反转摄像头；只反转相对腕部的前后深度，保留二维位置和左右手身份。
-- [x] 显示 `OPEN/PINCH/LOST` 姿态反馈；普通预览不触发雕刻、接触或抓取。
-- [x] 丢手、无效骨架和断流时隐藏手型，恢复时重新绑定；停止接收器清理生成的手对象、网格和材质。
-- [x] Blender 合成测试验证 42 关节回投影、前后翻转、捏合反馈、网格复用、丢手恢复及预览期间原目标不变。
-
-证据：[`runs/hand_preview/gui_test.json`](../runs/hand_preview/gui_test.json)（最大回投影误差约 0.017 像素，含源码 SHA-256），
-以及同目录的 `hands.png`、`hands.blend`。用户已反馈真人手型跟随效果良好；正式跨手遮挡与长时间录像证据仍可后续补充。
-写实手的加载、蒙皮、完整表面镜像、贴图、模式切换和资源清理证据位于
-[`runs/realistic_hand/gui_test.json`](../runs/realistic_hand/gui_test.json)；新皮肤的真人握拳与遮挡适配仍待验证。
-参考风格手型的几何、骨骼驱动及方向线验证见 `runs/smooth_hand/`，包含参考视角和张手/捏合/握拳渲染。
-该优化仍属独立可选扩展，不增加 M0–M6 的必需项。
-
-### Experimental：Blender 原生碰撞塑性
-
-**实验实现和自动验证已完成，开关默认关闭。** 使用原生 Collision 指尖球与 Soft Body Plasticity，
-让指尖推压物体，并在松手后保留形状。操作与适用网格限制见 [`PLASTICITY.md`](PLASTICITY.md)。
-
-- [x] 面板提供 `Plastic collision (experimental)` 独立开关；普通预览不启用物理，加载文件后也强制关闭。
-- [x] 十个指尖分别驱动碰撞球；独立临时场景中的低分辨率软体代理计算形变，并将位移传回原网格，保留原拓扑。
-- [x] 提供手动 `Collision plane depth` 和 `Finger collision size`；本轮只包含指尖碰撞，不包含手掌和指段碰撞。
-- [x] 指尖需先在物体外出现再进入接触；丢手/断流暂停碰撞并保留形状，重获与位置突跳时重新检查参与条件。
-- [x] 松手和关闭开关后保留形变；支持取消恢复初始形状，以及以整次实验为单位的 AirClay 撤销/重做。
-- [x] 求解缓存限制为 300 帧并从当前形状继续；用户场景时间轴与对象变换保持不变。
-- [x] 保存时结束实验并保留形状；结束、取消和加载时清理临时物理资源及中断遗留场景。
-- [x] 原生数值测试覆盖 330 帧捏压、释放、稳定及缓存重建；GUI 测试覆盖十指输入、默认关闭、保留、取消、撤销/重做、断流和保存清理。
-- [x] 原有手型预览、默认 v1 操作和插件 ZIP 加载回归通过。
-
-证据：[`native_test.json`](../runs/plasticity/native_test.json)、[`gui_test.json`](../runs/plasticity/gui_test.json)、
-[`load_test.json`](../runs/plasticity/load_test.json)、[`v1/gui_test.json`](../runs/plasticity/v1/gui_test.json)、
-[`package_test.json`](../runs/plasticity/package_test.json)，截图和 `.blend` 位于 `runs/plasticity/`。
-测试条件与测量值见 [`VALIDATION.md`](VALIDATION.md)。
-
-该实验是软体塑性近似，不保证体积守恒；手动显示深度不代表真实 camera-space 深度或 contact anchor。
-可选后续验证单独记录，不阻塞 M0–M6：
-
-- [ ] 保存真人捏压、松手保留与遮挡恢复的操作证据，记录手感和误触发。
-- [ ] 记录长时间碰撞的稳定性、资源占用、响应耗时及体积变化，再决定是否继续扩展。
-
-## 常用验证命令
-
-```bash
-.venv/bin/python -m pytest -q
-.venv/bin/python scripts/check_model.py
-bash scripts/start_blender.sh
-.venv/bin/airclay simulate
-.venv/bin/airclay track --backend rules
-```
-
-Blender 自动测试命令见 [`VALIDATION.md`](VALIDATION.md)。增加新组件时，先运行对应单元测试，再运行无摄像头 Blender 集成测试，最后进行真人摄像头验收；不能用后一步替代前两步。
+# Implementation checklist
+
+Updated: October 21, 2026.
+
+Checked items below mean the implementation exists in the source. Runtime and human
+acceptance are tracked separately in [VALIDATION.md](VALIDATION.md); historical
+results do not verify every later change. Synthetic inputs establish software
+behavior, not recognition accuracy or calibrated depth.
+
+## Current baseline
+
+- [x] External Python environment, MediaPipe model manifest, launcher, and add-on packaging.
+- [x] `doctor`, `track`, `simulate`, `record`, `review`, `annotate`, `split`, `replay`, `train`, and `evaluate` commands.
+- [x] Two-hand landmark tracking with handedness/wrist matching and configurable EMA.
+- [x] Original camera orientation (`mirrored=false`), stable fingertip IDs, and Left-blue/Right-orange markers.
+- [x] Causal resampling and common feature extraction for learning and inference.
+- [x] Rules, single-frame MLP, and 24-frame GRU intent backends.
+- [x] Exclusive v1 controller with neutral re-arming, onset arbitration, mode locking, loss pause, and rollback.
+- [x] Surface ray selection, geodesic brush weights, planar sculpting, view orbit, and brush resize.
+- [x] Thirty-operation AirClay undo/redo history and timeout rollback.
+- [x] Guided rounds with accept/retry, reference video review, manual labels, and subject splits.
+- [x] Portable raw-data export and NumPy reader; v1 contains three participants and six reviewed sessions.
+- [x] Frame classification, controller classification, confusion matrix, and event metrics.
+- [ ] Complete the five-person dataset and freeze the shared 3/1/1 subject split.
+- [ ] Add common offline/online preprocessing for later None/EMA/Kalman comparisons.
+- [ ] Complete human baseline training, evaluation, and the fixed Blender task.
+- [ ] Record current-version camera/Blender recovery and ten-minute stability checks.
+- [ ] Reproduce installation and operation on a second machine or clean environment.
+
+Changing the dominant hand changes control roles. It must not swap anatomical hand
+slots, fingertip IDs, or marker colors. Human checks must include both dominant-hand
+settings, crossings, occlusion, fast entry/exit, and a temporarily missing hand.
+
+## Planned interaction
+
+The longer-term design lets the dominant index finger sculpt while the auxiliary
+hand grips, rotates, and uniformly scales the object. Auxiliary grip requires all
+five fingertips to contact the surface. Rotation follows the hand's pose; scaling
+uses thumb/index 3D separation. Object scale and brush radius remain separate.
+This behavior is not provided by the current v1 `orbit` and `resize` modes.
+
+The proposed camera coordinates are +x right, +y up, and +z away from the camera.
+Movement toward the camera therefore has negative delta-z. These conventions apply
+to the planned calibrated representation, not the current hand-local landmarks.
+
+## Milestones
+
+### M0: Preserve the v1 baseline
+
+- [x] Existing source and tests cover the exclusive controller, v1 packets, and planar tools.
+- [ ] Retain source-matched results when rerunning the baseline; historical `runs/`
+  records must be identified by their own version and conditions.
+
+### M1: Ten-finger 2D hover
+
+- [x] Explicit v2 `hover2d` profile with full fingertip snapshots and a 4096-byte limit.
+- [x] Hidden/hover markers, first-hit ray selection, and rejection of back-facing hits.
+- [x] Finger IDs, identity colors, view-dependent marker size, and display toggles.
+- [x] Existing tests cover projection, missing/out-of-frame tips, invalid packets,
+  session changes, timeouts, and preservation of the target during plain preview.
+- [ ] Record human checks for each finger, crossings/occlusion, and dominant-role changes.
+
+[PROTOCOL_V2.md](PROTOCOL_V2.md) defines this implemented subset. It has no contact,
+latched state, camera-space depth, or concurrent operations.
+
+### M2: Depth and contact anchors
+
+- [ ] Save camera intrinsics, resolution, distortion, calibration date, and calibration ID.
+- [ ] Calibrate palm scale at about 30, 45, and 60 cm and implement geometric wrist depth.
+- [ ] Compare geometric depth with Depth Anything V2 and a hand-specific depth regressor
+  trained on RHD and a fixed InterHand2.6M subset. Preserve source versions and sample IDs.
+- [ ] Combine root depth with local hand structure to produce ten camera-space tips,
+  validity, confidence, and a documented camera-to-Blender transform.
+- [ ] Add causal depth filtering, speed limits, outlier rejection, and explicit 2D fallback.
+  Low-confidence depth must not create five-finger contact.
+- [ ] Extend recording and transport with calibration IDs, units, raw/filtered depth,
+  and confidence. Use a new explicit profile or version for operational packets.
+- [ ] Implement contact only after valid tracking, first visible front-facing hit,
+  and a calibrated surface-gap check. Proposed entry is `|g| <= 0.06R` for three
+  frames; exit is beyond `0.10R` or invalid tracking for five frames.
+- [ ] Store anchors in object-local coordinates with face/barycentric coordinates,
+  hand/finger ID, timestamp, and confidence. Latch the first contact rather than
+  switching to a rear surface during penetration.
+- [ ] Verify projection, axes, units, static jitter, forward/backward direction,
+  hysteresis, occlusion recovery, and stable ten-second contact.
+
+Initial targets are depth jitter below 1.5 cm and at least 90% direction accuracy
+over 30 forward/backward trials. Calibration and evaluation sequences must differ.
+Report depth/displacement error, valid coverage, jitter, lag, and runtime. Report
+MPJPE only if the implementation produces joints with a defined coordinate/alignment
+protocol. Targets are provisional and have not been measured.
+
+### M3: Five-finger grip, rotation, and object scale
+
+- [ ] Enter grip after all auxiliary fingertips maintain contact for at least 150 ms.
+- [ ] Save the initial anchors, fingertips, palm basis, center, rotation, and scale.
+- [ ] Estimate rotation from weighted Kabsch alignment and palm orientation; smooth
+  quaternions, preserve sign continuity, and limit angular speed.
+- [ ] Rotate about the object's center without translating it. Freeze on brief
+  fingertip loss; end/cancel after exit hysteresis rather than falling back to one finger.
+- [ ] Scale uniformly from `s0 * clamp(d/d0, 0.5, 2.0)`, with a proposed 3% deadband,
+  filtering, and speed limits. Define depth-loss behavior before enabling fallback.
+- [ ] Derive rotation and scale from the onset snapshot to avoid accumulated drift.
+  Keep `object_scale` distinct from `brush_radius` in the protocol, UI, and logs.
+- [ ] Check known 5/15/45-degree rotations, pure translation, pure scale,
+  near-coplanar points, abnormal tips, and front/back hand poses.
+- [ ] Compare target-angle tasks with v1 orbit; record time, angle/scale error,
+  overshoot, missed triggers, and false triggers. The initial synthetic angle-error
+  target is median below 3 degrees; include repeated human enlargement/reduction trials.
+
+### M4: Concurrent sculpting and object transforms
+
+- [ ] Replace the exclusive label with channels such as `sculpt_active`,
+  `object_grip_active`, and `brush_resize_active`, sharing a contract across backends.
+- [ ] Use independent hand/channel timing and explicit role conflicts. Auxiliary
+  rotation/scale must not terminate dominant-hand sculpting.
+- [ ] Apply object transforms first, then map the sculpt point into updated local
+  coordinates. Define how world brush radius behaves under object scale.
+- [ ] Use one compound transaction covering mesh, object transform, view, and brush;
+  commit when all channels finish and roll back the whole transaction on timeout.
+- [ ] Add overlapping labels, compound transaction IDs, per-channel state, calibration,
+  units, and fallback flags. Preserve explicit v1 compatibility.
+- [ ] Validate the mode truth table, loss handling, packet loss/order/duplication,
+  anchor stability during a 90-degree rotation, and deterministic replay.
+- [ ] Check simultaneous sculpt/rotate/scale for 30 seconds, atomic undo/redo,
+  saving/reopening, and ten minutes of continuous transport.
+
+The receiver remains responsible for mesh hits and anchors, with all Blender calls
+on the main thread. UI/logs should expose channels, depth source/confidence,
+fallback state, anchor information, and timing by stage.
+
+### M5: Public-data pretraining and few-shot adaptation
+
+- [ ] Record dataset versions, licenses, hashes, and fixed subset IDs. Implement
+  adapters that retain source labels and distinguish coordinate systems.
+- [ ] Pretrain temporal representations on public motion data and implement
+  prototype adaptation with 1/5/10 independently recorded demonstrations per command.
+- [ ] Keep support/query and train/validation/test separated before window generation.
+- [ ] Compare rules, MLP, scratch GRU, pretrained linear classification, and prototype
+  adaptation using the same data and evaluation budgets.
+- [ ] Add multi-label training and evaluation if concurrent controls are included.
+- [ ] Report per-class and macro metrics, continuous-operation errors, rejection,
+  latency, and variation across users and seeds; exclude synthetic smoke results.
+
+The midterm TCN and filter comparisons are separate near-term tasks. They do not
+establish public-data pretraining, few-shot learning, or calibrated depth.
+
+### M6: Final delivery
+
+- [ ] Complete the fixed Blender task with the planned participants and record failures.
+- [ ] Report measured recognition, event, depth (if implemented), timing, and task results.
+- [ ] Save source/configuration/model/calibration IDs, initial object state, and hardware.
+- [ ] Finish stability and clean-install checks, package the add-on, and save a demo
+  scene and video. Align the report and documentation with the delivered behavior.
+
+## Independent optional extensions
+
+These extensions do not replace M2–M4 calibration, contact, or concurrent-control
+requirements, and are not prerequisites for those milestones.
+
+### Hand preview
+
+- [x] `hand_preview` carries both 21-joint skeletons and local articulation.
+- [x] Smooth, realistic, and simple hand models reuse meshes and support visibility,
+  manual depth, front/back reflection, and OPEN/PINCH/LOST feedback.
+- [x] Asset manifests, textures, attribution, fallback, and cleanup are implemented.
+- [x] Existing synthetic tests cover projection, poses, reflection, style switching,
+  direction guides, resource lifetime, and target preservation.
+- [ ] Record human fit, extreme poses, crossings, and long-session behavior.
+
+See [HAND_PREVIEW.md](HAND_PREVIEW.md). Both Smooth meshes are blue; identity is
+shown by the blue/orange cursors and legend.
+
+### Plastic collision
+
+- [x] Default-off native fingertip Collision spheres and an isolated Soft Body proxy.
+- [x] Manual depth/size, outside-first arming, loss pause, and shape retention.
+- [x] Cancel, whole-experiment undo/redo, bounded cache, and save/load cleanup.
+- [x] Numerical, GUI, and load-check scripts cover the implemented lifecycle.
+- [ ] Record human compression/release, occlusion recovery, long-run performance,
+  resource use, and volume change.
+
+See [PLASTICITY.md](PLASTICITY.md). Manual depth and soft-body deformation do not
+establish calibrated contact or volume conservation.
