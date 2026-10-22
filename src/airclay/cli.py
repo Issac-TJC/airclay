@@ -15,7 +15,7 @@ def main():
     sub.add_parser("doctor")
     for name in ("track", "replay"):
         p = sub.add_parser(name)
-        p.add_argument("--backend", choices=["rules","mlp","gru"], default="rules")
+        p.add_argument("--backend", choices=["rules","mlp","gru","tcn"], default="rules")
         p.add_argument("--checkpoint")
         p.add_argument("--no-preview", action="store_true")
         if name == "track":
@@ -45,7 +45,7 @@ def main():
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--allow-small", action="store_true")
     p = sub.add_parser("train")
-    p.add_argument("--model", choices=["mlp","gru"], required=True)
+    p.add_argument("--model", choices=["mlp","gru","tcn"], required=True)
     p.add_argument("--split", required=True)
     p.add_argument("--output", required=True)
     p.add_argument("--epochs", type=int)
@@ -53,7 +53,7 @@ def main():
     p.add_argument("--device", choices=["cpu","mps"])
     p.add_argument("--allow-synthetic", action="store_true")
     p = sub.add_parser("evaluate")
-    p.add_argument("--backend", choices=["rules","mlp","gru"], required=True)
+    p.add_argument("--backend", choices=["rules","mlp","gru","tcn"], required=True)
     p.add_argument("--checkpoint")
     p.add_argument("--split", required=True)
     p.add_argument("--partition", choices=["val","test"], default="test")

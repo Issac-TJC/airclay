@@ -1,6 +1,6 @@
 # AirClay：双手手势捏泥
 
-普通摄像头 → MediaPipe 关键点 → 规则 / MLP / GRU → 本机通信 → Blender 局部拉伸。
+普通摄像头 → MediaPipe 关键点 → 规则 / MLP / GRU / TCN → 本机通信 → Blender 局部拉伸。
 
 惯用手编辑，另一只手旋转，双手调节笔刷。默认右手编辑。预训练关键点检测器不参与训练；课程训练部分是你们自己的意图识别器。
 
@@ -54,7 +54,7 @@ AirClay 面板的 `Show all fingertips` 关闭时只显示两手食指；`Show h
 v1 或 v2 `hover2d`，拒绝未知版本和同一 session 内的版本切换。
 
 预览也支持 `--config configs/hover.json replay <recording>`，从 v1 录制的 21 个图像关键点提取
-指尖，不修改旧录制或标签。v2 不运行 MLP/GRU。协议约定见 [docs/PROTOCOL_V2.md](docs/PROTOCOL_V2.md)。
+指尖，不修改旧录制或标签。v2 不运行 MLP/GRU/TCN。协议约定见 [docs/PROTOCOL_V2.md](docs/PROTOCOL_V2.md)。
 
 ### 三维手型预览：观察捏合姿态
 
@@ -159,9 +159,12 @@ Collision + Soft Body Plasticity 推压物体，关闭后保留形状。先把�
 ```bash
 .venv/bin/airclay train --model gru --split data/split.json --output runs/gru_seed42
 .venv/bin/airclay train --model mlp --split data/split.json --output runs/mlp_seed42
+.venv/bin/airclay train --model tcn --split data/split.json --output runs/tcn_seed42
 ```
 
-默认 CPU，GRU 为 2 层、128 hidden、24 帧因果窗口；最多 50 epoch，验证集 Macro-F1 早停。可指定 `--device mps`、`--epochs`、`--seed`。正式实验再用 43、44 两个种子重复。
+默认 CPU，GRU 为 2 层、128 hidden、24 帧因果窗口；TCN 使用 140→64 投影和三个
+严格左填充的残差块，每块两层 kernel-3 卷积，dilation 为 1/2/4。最多 50 epoch，验证集
+Macro-F1 早停。可指定 `--device mps`、`--epochs`、`--seed`。正式实验再用 43、44 两个种子重复。
 
 所有训练标签必须人工验证，四个类别必须在训练集出现。没有真实采集时只提供合成冒烟权重，不能用于性能报告。
 
@@ -171,16 +174,41 @@ Collision + Soft Body Plasticity 推压物体，关闭后保留形状。先把�
 .venv/bin/airclay evaluate --backend rules --split data/split.json --output runs/eval_rules
 .venv/bin/airclay evaluate --backend gru --checkpoint runs/gru_seed42/best.pt --split data/split.json --output runs/eval_gru
 .venv/bin/airclay evaluate --backend mlp --checkpoint runs/mlp_seed42/best.pt --split data/split.json --output runs/eval_mlp
+.venv/bin/airclay evaluate --backend tcn --checkpoint runs/tcn_seed42/best.pt --split data/split.json --output runs/eval_tcn
 .venv/bin/airclay track --backend gru --checkpoint runs/gru_seed42/best.pt
+.venv/bin/airclay track --backend tcn --checkpoint runs/tcn_seed42/best.pt
 ```
 
-输出包含分类报告、混淆矩阵 PNG、连续操作事件统计。默认评估 test；调参仅使用 `--partition val`。指定模型但未提供正确权重会报错，不会悄悄切换规则。
+输出包含分类报告、混淆矩阵 PNG、连续操作事件统计，以及学习模型在 CPU、batch=1 下的
+参数量和纯推理 median/p95。默认评估 test；调参仅使用 `--partition val`。指定模型但未提供正确权重会报错，不会悄悄切换规则。
 
 按原时间戳回放录制数据：
 
 ```bash
 .venv/bin/airclay replay data/p01_s01 --backend rules
+.venv/bin/airclay replay data/p01_s01 --backend tcn --checkpoint runs/tcn_seed42/best.pt
 ```
+
+### TCN 中期正式实验
+
+正式三种子实验要求五人数据已人工复核，并使用相同的 EMA 0.45 预处理。预处理 manifest
+至少包含 `filter`、`alpha` 和与 split 完全相同的绝对或可解析录制路径：
+
+```json
+{"filter":"ema","alpha":0.45,"recordings":["/absolute/path/to/p01_s01"]}
+```
+
+以下命令先拒绝 synthetic、未复核标签、subject 泄漏和不一致的预处理 manifest，再依次训练
+42/43/44，最后运行 val/test、汇总结果并保存两个最长的时间戳失败区间：
+
+```bash
+.venv/bin/python scripts/run_tcn_midterm.py \
+  --split data/split.json \
+  --preprocessing-manifest data/ema_manifest.json \
+  --output runs/midterm/tcn
+```
+
+输出目录必须为空，避免覆盖正式实验。`summary.json` 是三种子汇总，主图固定使用 seed 42。
 
 ## 环境与打包
 
@@ -207,6 +235,8 @@ bash scripts/bootstrap.sh
 .venv/bin/python scripts/make_smoke_data.py
 .venv/bin/airclay train --model gru --split runs/smoke_split.json --output runs/smoke_gru --epochs 2 --allow-synthetic
 .venv/bin/airclay evaluate --backend gru --checkpoint runs/smoke_gru/best.pt --split runs/smoke_split.json --output runs/smoke_gru/evaluation --allow-synthetic
+.venv/bin/airclay train --model tcn --split runs/smoke_split.json --output runs/smoke_tcn --epochs 2 --allow-synthetic
+.venv/bin/airclay evaluate --backend tcn --checkpoint runs/smoke_tcn/best.pt --split runs/smoke_split.json --output runs/smoke_tcn/evaluation --allow-synthetic
 ```
 
 真实 Blender 网格测试与完整 GUI 测试分别是 `scripts/test_blender.py` 和 `scripts/test_gui.py`，通过 Blender `--python` 启动。GUI 测试使用端口 8766，在独立场景中测试模拟操作、撤销和断流回滚。

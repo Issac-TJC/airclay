@@ -1,5 +1,26 @@
 # 验证记录
 
+## 2026-10-20：Caleb 因果 TCN 阶段一
+
+- 已实现固定因果 TCN：`140→64` 投影、三个 residual blocks、每块两个 kernel-3
+  causal convolution，dilation 为 `1/2/4`，ReLU、dropout 0.2、四分类逐帧输出；
+  `forward()` 使用最后一步。所有卷积只做左侧 padding，不使用跨时间 normalization。
+- 默认模型共有 **83,396** 个可训练参数。自动测试覆盖 `[B,4]` 与 `[B,T,4]` 输出、
+  future-input invariance、checkpoint round trip、类型/schema 拒绝、batch/online 特征一致性，
+  以及第 23/24 帧 warm-up 边界。
+- 完整 Python 回归为 **60 项通过**（`.venv/bin/python -m pytest -q`），原 MLP、GRU、协议和
+  Blender 相关测试未回归。
+- `scripts/make_smoke_data.py` 生成的合成 split 完成两轮 TCN 训练，validation Macro-F1
+  为 0.919；test Macro-F1 为 0.922，状态机事件 false operations 与 misses 均为 0。
+  checkpoint 随后完成 evaluate 和无预览 replay，验证 feature→TCN→state machine→UDP 链路。
+- learned-model evaluation JSON 已记录参数量和公平的纯模型 CPU timing：batch 1、window 24、
+  warm-up 50 次、测量 200 次；本次 median 0.300 ms、p95 0.304 ms。该计时不含特征、状态机、
+  UDP、摄像头或显示延迟。
+- 所有上述数值均标记 `synthetic_smoke_only=true`，不会进入正式中期表格。
+  `scripts/run_tcn_midterm.py` 会在训练前拒绝 synthetic/未人工验证数据、subject leakage、
+  不完整训练类别，以及非统一 EMA 0.45 的 preprocessing manifest；正式 split 与 EMA 数据
+  尚未到位，因此三种子 human-data 结果保持 unmeasured。
+
 ## 2026-09-10：参考风格的光滑手型与蒙皮优化
 
 目标为用户参考图右侧的浅蓝、圆润、无皮肤纹理的手部显示。默认模型改为 `Smooth blue hand`，

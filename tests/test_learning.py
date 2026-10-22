@@ -1,17 +1,23 @@
 import numpy as np
+import pytest
 import torch
 from airclay.learning.models import make_model
 from airclay.learning.features import LABELS, FEATURE_DIM, FEATURE_VERSION
 from airclay.learning.inference import Predictor
-from airclay.learning.evaluate import event_metrics
+from airclay.learning.evaluate import event_metrics, failure_intervals, profile_model
 from airclay.data_tools.synthetic import demo_frames
+
+
+def model_config():
+    return {"hidden":128,"layers":2,"dropout":.2,"window":24,"fps":30,
+            "tcn_channels":64,"tcn_kernel_size":3,"tcn_dilations":[1,2,4]}
 
 
 def test_checkpoint_predictions_match_training_forward(tmp_path):
     torch.manual_seed(42)
-    cfg={"hidden":128,"layers":2,"dropout":.2,"window":24,"fps":30}
+    cfg=model_config()
     frames,_=demo_frames()
-    for kind in ("mlp","gru"):
+    for kind in ("mlp","gru","tcn"):
         model=make_model(kind,cfg).eval()
         path=tmp_path/f"{kind}.pt"
         torch.save({"kind":kind,"config":cfg,"feature_version":FEATURE_VERSION,
@@ -22,6 +28,43 @@ def test_checkpoint_predictions_match_training_forward(tmp_path):
         with torch.inference_mode():
             expected=LABELS[model(torch.from_numpy(np.stack(predictor.buffer)).unsqueeze(0)).argmax().item()]
         assert label==expected
+
+
+def test_tcn_shapes_parameter_count_and_strict_causality():
+    torch.manual_seed(42)
+    model=make_model("tcn",model_config()).eval()
+    x=torch.randn(2,24,FEATURE_DIM)
+    sequence=model.forward_sequence(x)
+    assert sequence.shape==(2,24,4)
+    assert model(x).shape==(2,4)
+    assert sum(p.numel() for p in model.parameters())==83396
+    changed=x.clone()
+    changed[:,13:]=torch.randn_like(changed[:,13:])*100
+    altered=model.forward_sequence(changed)
+    torch.testing.assert_close(sequence[:,:13],altered[:,:13],rtol=0,atol=0)
+
+
+def test_tcn_predictor_warmup_and_checkpoint_kind_validation(tmp_path):
+    cfg=model_config()
+    model=make_model("tcn",cfg).eval()
+    path=tmp_path/"tcn.pt"
+    torch.save({"kind":"tcn","config":cfg,"feature_version":FEATURE_VERSION,
+                "feature_dim":FEATURE_DIM,"labels":LABELS,"state_dict":model.state_dict()},path)
+    predictor=Predictor(path,"tcn")
+    frames,_=demo_frames()
+    for frame in frames[:23]:
+        assert predictor.step(frame)=="idle"
+    actual=predictor.step(frames[23])
+    with torch.inference_mode():
+        expected=LABELS[model(torch.from_numpy(np.stack(predictor.buffer)).unsqueeze(0)).argmax().item()]
+    assert actual==expected
+    with pytest.raises(ValueError,match="does not match"):
+        Predictor(path,"gru")
+    invalid=tmp_path/"invalid_schema.pt"
+    torch.save({"kind":"tcn","config":cfg,"feature_version":"incompatible",
+                "feature_dim":FEATURE_DIM,"labels":LABELS,"state_dict":model.state_dict()},invalid)
+    with pytest.raises(ValueError,match="schema mismatch"):
+        Predictor(invalid,"tcn")
 
 
 def test_event_metrics_identify_misses_and_false_operations():
@@ -85,3 +128,13 @@ def test_predictor_warms_up_again_after_take_boundary(tmp_path):
     assert len(predictor.buffer) == 24
     assert predictor.step({**frames[24], "take_id": "second"}) == "idle"
     assert len(predictor.buffer) == 1
+
+
+def test_failure_intervals_and_model_profile_are_reportable():
+    t=list(range(0,500,100))
+    failures=failure_intervals(t,[0,1,1,0,0],[0,0,2,0,0])
+    assert failures==[{"start_ms":100,"end_ms":200,"truth":"sculpt","predicted":"idle"},
+                      {"start_ms":200,"end_ms":300,"truth":"sculpt","predicted":"orbit"}]
+    profile=profile_model(make_model("tcn",model_config()).eval(),model_config(),warmup=1,iterations=2)
+    assert profile["parameters"]==83396 and profile["device"]=="cpu"
+    assert profile["median_ms"]>=0 and profile["p95_ms"]>=0

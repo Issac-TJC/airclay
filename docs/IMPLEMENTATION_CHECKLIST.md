@@ -1,6 +1,6 @@
 # AirClay 实现与验证 Checklist
 
-更新日期：2026-09-10
+更新日期：2026-10-20
 
 本文按组件记录 AirClay 的当前状态、下一步实现和验收方法。只有在实现已经合入，并且对应的自动测试或真人验收证据已保存后，才将项目勾选为完成。
 
@@ -39,7 +39,7 @@ M1 更新：已增加显式启用的 UDP v2 `hover2d` 和十指二维预览，�
 - [x] MediaPipe Hand Landmarker 模型、来源和校验值已保存在 `assets/`。
 - [x] Blender 插件支持临时加载和 ZIP 打包。
 - [x] 规则模式在没有训练权重时可以完成拉伸、视图旋转和笔刷半径调整。
-- [x] MLP/GRU 的训练、保存、加载和评估流程可运行。
+- [x] MLP/GRU/因果 TCN 的训练、保存、加载和评估流程可运行。
 
 ### 验证
 
@@ -263,13 +263,14 @@ M1 已新增 v2 `hover2d` 子集，字段、版本隔离、包体限制及无深
 ### 实现
 
 - [x] v1 录制、回放、区间标注和按受试者划分已经实现。
-- [x] v1 支持 `idle/sculpt/orbit/resize` 单标签数据以及 MLP/GRU 分类。
+- [x] v1 支持 `idle/sculpt/orbit/resize` 单标签数据以及 MLP/GRU/因果 TCN 分类。
 - [x] 评估输出分类指标、混淆矩阵和连续事件指标。
 - [ ] 下载并记录 Jester、IPN HandS、SHREC 2024、RHD 的来源、许可、版本和文件校验值。
 - [ ] 为大型 HaGRID/InterHand 子集保存固定样本清单，而不是每次随机抽样。
 - [ ] 编写公共数据适配器，将 RGB、关键点、相机参数和原始标签转换为统一但不混淆坐标系的数据格式。
 - [ ] 实现公共数据上的动作原语预训练：idle、pinch/click、translation、push/pull、two-hand scale。
-- [ ] 实现 GRU/TCN sequence encoder 和 Prototypical Network episodic training。
+- [x] 实现 GRU/TCN sequence classifier baseline，并验证 TCN 严格因果性和 checkpoint round trip。
+- [ ] 实现 Prototypical Network episodic training。
 - [ ] 支持 1-shot、5-shot、10-shot support set，并只更新 projection head/prototypes。
 - [ ] 将意图训练改为 multi-label loss，支持 `sculpt` 与 `grip/scale` 重叠。
 - [ ] 标注工具支持多通道重叠区间、五指接触状态检查和深度校准片段。
