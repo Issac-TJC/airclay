@@ -77,11 +77,48 @@ velocities, and learned windows reset at take boundaries; no training window cro
 a take. The controller and event scorer currently run across the accepted session
 timeline rather than resetting separately for each take.
 
-Rules, MLP, and GRU use the same data, split, sampling rate, and controller. TCN and
-Kalman comparisons remain planned. Tune rule thresholds and filter parameters on
+Rules, MLP, and GRU use the same data, split, sampling rate, and controller. TCN
+comparisons remain planned. Tune rule thresholds and filter parameters on
 validation data only. Train learned models with seeds 42, 43, and 44; report means
 and standard deviations with each run's results retained. Seed variation is not
 variation across independent participants. Freeze settings before test evaluation.
+
+### Filtered releases
+
+`scripts/derive_filtered.py` writes a filtered copy of a handoff release. Only landmark
+coordinates change; hand identities, timestamps, takes, validity, and labels are
+copied. Filters reset at every take and after gaps of 150 ms or more. EMA uses alpha
+0.45 with the same update as live `HandMatcher`, but keeps the release's hand
+identities instead of re-matching hands; `--check-online` reports how often the two
+differ. Kalman uses a constant-velocity model with r=9e-6 and q=3e-3, with q chosen on
+the validation subject only.
+
+```bash
+.venv/bin/python scripts/derive_filtered.py data/processed/airclay-v1 data/processed/airclay-v1-ema --filter ema
+.venv/bin/python scripts/derive_filtered.py data/processed/airclay-v1 data/processed/airclay-v1-kalman --filter kalman --q 3e-3 --r 9e-6
+```
+
+To train or evaluate on a filtered release, build a split from its `data/` folder.
+Split files store absolute paths, so build one on each machine. Seed 42 gives the same
+subject split as the raw release.
+
+```bash
+.venv/bin/airclay split data/processed/airclay-v1-ema/data --allow-small --seed 42 --output data/split_ema.json
+.venv/bin/airclay evaluate --backend rules --split data/split_ema.json --partition test --output runs/eval_rules_ema
+```
+
+`scripts/filter_eval.py` runs the same rule-backend evaluation but filters in memory,
+so settings can be compared without writing new releases. Give it a split of the raw
+release, built the same way from `data/processed/airclay-v1/data`; an EMA split would
+be smoothed twice.
+
+```bash
+.venv/bin/python scripts/filter_eval.py --split data/split.json --partition val --filter kalman --q 1e-5 3e-5 1e-4 3e-4 1e-3 3e-3 1e-2 3e-2 1e-1
+.venv/bin/python scripts/filter_eval.py --split data/split.json --partition test --filter none
+.venv/bin/python scripts/filter_eval.py --split data/split.json --partition test --filter ema
+.venv/bin/python scripts/filter_eval.py --split data/split.json --partition test --filter kalman --q 3e-3
+.venv/bin/python scripts/filter_eval.py --split data/split.json --partition test --filter ema --set combo_ms=0
+```
 
 ## Implemented metrics
 
