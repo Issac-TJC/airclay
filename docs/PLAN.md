@@ -22,7 +22,7 @@ controller. Hand preview also supports a separate, default-off
 3. A causal resampler produces 30 Hz samples from the most recent observation.
    Observations older than 150 ms become missing. It never interpolates from future
    frames. Resampling, feature velocities, and learned windows restart at take boundaries.
-4. Rules, MLP, or GRU propose one intent to the shared controller. Learned inference
+4. Rules, MLP, GRU, or causal TCN propose one intent to the shared controller. Learned inference
    uses argmax logits; probability smoothing and calibrated rejection are absent.
 5. Full-state packets go to `127.0.0.1:8765`. Blender receives on its main-thread
    modal timer, processing at most 64 datagrams per tick.
@@ -87,8 +87,11 @@ absolute image wrist positions are retained.
 | Rules | Pinch hysteresis and hand roles |
 | MLP | Last frame's 135 non-velocity features; 128-unit ReLU layer, dropout 0.2, four logits |
 | GRU | 24 × 140 input; two unidirectional 128-unit layers, dropout 0.2, four-logit head |
+| TCN | 24 × 140 input; 140-to-64 projection, three residual causal blocks with two kernel-3 convolutions each, dilations 1/2/4, dropout 0.2, four-logit head |
 
-Both learned backends return idle until the 24-frame buffer is full. Training uses
+All learned backends return idle until the 24-frame buffer is full. The TCN uses
+explicit left padding and no normalization across time; the default model has 83,396
+trainable parameters. Training uses
 AdamW, learning rate 0.001, batch size 64, gradient clipping at 1, at most 50 epochs,
 and patience 8. Training window stride is 3; validation stride is 1. Class weights
 come from training labels. The best validation Macro-F1 checkpoint records model

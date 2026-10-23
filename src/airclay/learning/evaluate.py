@@ -1,4 +1,5 @@
 import json
+import time
 from pathlib import Path
 import numpy as np
 from sklearn.metrics import classification_report, confusion_matrix
@@ -42,11 +43,48 @@ def event_metrics(times, truth, predicted):
             "offset_delay_ms": [p["end"]-g["end"] for g,p in matches]}
 
 
+def failure_intervals(times, truth, predicted):
+    """Return timestamped contiguous controller/ground-truth disagreements."""
+    if not times:
+        return []
+    step = float(np.median(np.diff(times))) if len(times) > 1 else 33.333
+    result, start = [], None
+    pair = None
+    for t, expected, actual in zip(times + [times[-1] + step], truth + [-1], predicted + [-1]):
+        current = (expected, actual) if expected != actual else None
+        if current != pair:
+            if pair is not None:
+                result.append({"start_ms": start, "end_ms": t,
+                               "truth": LABELS[pair[0]], "predicted": LABELS[pair[1]]})
+            start, pair = t, current
+    return result
+
+
+def profile_model(model, cfg, warmup=50, iterations=200):
+    """Measure pure batch-one CPU model time independently of features/sending."""
+    import torch
+    model.eval()
+    sample = torch.zeros((1, cfg["window"], cfg.get("feature_dim", 140)), dtype=torch.float32)
+    with torch.inference_mode():
+        for _ in range(warmup):
+            model(sample)
+        timings = []
+        for _ in range(iterations):
+            started = time.perf_counter()
+            model(sample)
+            timings.append((time.perf_counter() - started) * 1000)
+    return {"parameters": sum(p.numel() for p in model.parameters()), "device": "cpu",
+            "batch_size": 1, "window": cfg["window"], "warmup_iterations": warmup,
+            "measured_iterations": iterations, "median_ms": float(np.median(timings)),
+            "p95_ms": float(np.percentile(timings, 95))}
+
+
 def evaluate(args):
     cfg = config(args.config)
     split = json.loads(Path(args.split).read_text())
     validate_split(split)
     truth_all, pred_all, state_all, results = [], [], [], []
+    model_profile = None
     for path in split["recordings"][args.partition]:
         meta, frames, ann = read_recording(path, True, args.allow_synthetic)
         cfg["dominant"] = meta.get("dominant", "Right")
@@ -55,6 +93,9 @@ def evaluate(args):
         if args.backend != "rules":
             from .inference import Predictor
             predictor = Predictor(args.checkpoint, args.backend)
+            if model_profile is None:
+                profile_cfg = {**predictor.cfg, "feature_dim": 140}
+                model_profile = profile_model(predictor.model, profile_cfg)
         resampler = Resampler(predictor.cfg["fps"] if predictor else cfg["fps"])
         times, truth, predictions, states = [], [], [], []
         for frame in frames:
@@ -65,7 +106,8 @@ def evaluate(args):
                 truth.append(label_at(times[-1], ann))
                 predictions.append(LABELS.index(intent if predictor else state["rule_intent"]))
                 states.append(LABELS.index(state["mode"]))
-        results.append({"recording": path, **event_metrics(times, truth, states)})
+        results.append({"recording": path, **event_metrics(times, truth, states),
+                        "failure_intervals": failure_intervals(times, truth, states)})
         truth_all.extend(truth)
         pred_all.extend(predictions)
         state_all.extend(states)
@@ -81,7 +123,8 @@ def evaluate(args):
     report = {"backend": args.backend, "partition": args.partition, "synthetic_smoke_only": args.allow_synthetic,
               "classification": classification_report(truth_all, pred_all, labels=list(range(4)), target_names=LABELS, output_dict=True, zero_division=0),
               "state_classification": classification_report(truth_all, state_all, labels=list(range(4)), target_names=LABELS, output_dict=True, zero_division=0),
-              "confusion_matrix": matrix.tolist(), "events": aggregate, "recordings": results}
+              "confusion_matrix": matrix.tolist(), "events": aggregate,
+              "model_profile": model_profile, "recordings": results}
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     (out / "metrics.json").write_text(json.dumps(report, indent=2))

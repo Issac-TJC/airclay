@@ -20,6 +20,12 @@ stability, and clean-environment reproduction remain unverified. Camera capture 
 since produced the reviewed sessions; the old permission failure below does not
 describe the device's current state.
 
+The causal TCN branch added a 140-to-64 projection, three residual causal blocks with
+dilations 1/2/4, and an 83,396-parameter four-class head. Tests cover output shape,
+future-input invariance, checkpoint round trips, schema rejection, and the 23/24-frame
+online warm-up boundary. Its reported two-epoch synthetic run validated plumbing only;
+the three-seed human-data comparison remains pending.
+
 ## Historical reports
 
 These entries summarize the earlier validation notes. Restore the original reports
@@ -32,6 +38,7 @@ midterm draft also mentions a 57-test audit on October 19 whose log is absent he
 |---|---|---|
 | v1 baseline | 13 Python tests; 10,242-vertex sphere, 127 affected vertices; four committed operations, undo/redo, and timeout rollback | `runs/gui_test.json`, `runs/airclay_demo.blend` |
 | MLP/GRU pipeline | Two-epoch synthetic training, checkpoint loading, and evaluation | `runs/smoke_mlp/`, `runs/smoke_gru/` |
+| Causal TCN pipeline | Shape/causality/checkpoint tests and a two-epoch synthetic training/evaluation/replay smoke run; human results pending | `runs/smoke_tcn/` |
 | hover2d | 41 Python tests; ten markers, first-surface/back-face checks, missing tips, packet rejection, and timeout | `runs/m1/hover_gui.json`, `runs/m1/python_tests.txt` |
 | Simple hand preview | 51 Python tests; 42-joint projection, reflection, pinch, reuse, and cleanup | `runs/hand_preview/gui_test.json` |
 | Realistic skin | 55 Python tests; skin/texture loading, reflection, fallback, and cleanup | `runs/realistic_hand/gui_test.json` |

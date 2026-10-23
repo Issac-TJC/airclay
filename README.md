@@ -2,7 +2,7 @@
 
 AirClay uses an RGB webcam and MediaPipe landmarks to control a mesh in Blender.
 The dominant hand sculpts, the other hand orbits the view, and a two-hand pinch
-changes the brush radius. Rules, MLP, and GRU backends share the same controller.
+changes the brush radius. Rules, MLP, GRU, and causal TCN backends share the same controller.
 MediaPipe is a fixed front end; the trained models classify interaction intent.
 
 ## Setup and quick start
@@ -145,6 +145,7 @@ Once all five participants are available, create a split and train the baselines
 .venv/bin/airclay split data --output data/split.json --seed 42
 .venv/bin/airclay train --model gru --split data/split.json --output runs/gru_seed42
 .venv/bin/airclay train --model mlp --split data/split.json --output runs/mlp_seed42
+.venv/bin/airclay train --model tcn --split data/split.json --output runs/tcn_seed42
 ```
 
 **Training and evaluation use the coordinates stored in each recording. They do
@@ -155,7 +156,9 @@ The split command reads immediate session folders; for extracted handoff data, u
 
 Defaults are CPU, a 24-frame window, at most 50 epochs, and validation Macro-F1 early
 stopping. The GRU has two 128-unit layers; the MLP uses the last frame's 135 static
-features. Both learned backends wait for a full window before predicting. Repeat
+features. The TCN projects 140 features to 64 channels and uses three residual causal
+blocks with two kernel-3 convolutions per block and dilations 1, 2, and 4. All learned
+backends wait for a full window before predicting. Repeat
 training with seeds 43 and 44 for the planned comparison. `--allow-small` permits a
 three-person smoke split; it is not the planned pilot split.
 
@@ -163,13 +166,31 @@ three-person smoke split; it is not the planned pilot split.
 .venv/bin/airclay evaluate --backend rules --split data/split.json --output runs/eval_rules
 .venv/bin/airclay evaluate --backend gru --checkpoint runs/gru_seed42/best.pt --split data/split.json --output runs/eval_gru
 .venv/bin/airclay evaluate --backend mlp --checkpoint runs/mlp_seed42/best.pt --split data/split.json --output runs/eval_mlp
+.venv/bin/airclay evaluate --backend tcn --checkpoint runs/tcn_seed42/best.pt --split data/split.json --output runs/eval_tcn
 .venv/bin/airclay track --backend gru --checkpoint runs/gru_seed42/best.pt
+.venv/bin/airclay track --backend tcn --checkpoint runs/tcn_seed42/best.pt
 .venv/bin/airclay replay data/p01_s01 --backend rules
+.venv/bin/airclay replay data/p01_s01 --backend tcn --checkpoint runs/tcn_seed42/best.pt
 ```
 
 Evaluation writes `metrics.json` and `confusion.png`. Tune with `--partition val`;
 the default is test. Learned backends require a compatible checkpoint. Replay uses
 recorded landmarks and source timing; it does not rerun MediaPipe or add smoothing.
+
+For the frozen three-seed TCN experiment, provide the shared split and the EMA 0.45
+`derived_manifest.json` produced by `scripts/derive_filtered.py`. A legacy flat
+manifest with `filter`, `alpha`, and recording paths is also accepted:
+
+```bash
+.venv/bin/python scripts/run_tcn_midterm.py \
+  --split data/split.json \
+  --preprocessing-manifest data/processed/airclay-v2-ema/derived_manifest.json \
+  --output runs/midterm/tcn
+```
+
+The runner rejects synthetic or unverified recordings, subject leakage, incomplete
+training classes, and a non-empty output directory. It trains seeds 42, 43, and 44,
+evaluates validation before test, and writes the aggregate summary and failure intervals.
 
 ## Packaging and reference
 

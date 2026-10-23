@@ -62,7 +62,7 @@
 \ifdraftnotes
 \begin{tcolorbox}[title={Team working draft | Due Friday evening, October 23, 2026}]
 The main text is the report; blue boxes are instructions for completing it, not
-statements of contributions already made. Assign names to roles A--E below, then
+statements of contributions already made. Confirm the role assignments below, then
 follow the task cards in the corresponding sections. Each member records two
 sessions and checks the next member's labels: A checks B, through to E checking A.
 Each owner supplies ready-to-use analysis, figures, and source evidence; E integrates
@@ -74,11 +74,11 @@ and cross-checking. These are estimates, not hours already worked.
 \toprule
 Role / name & Main work and report sections & Milestones \\
 \midrule
-A: \underline{\hspace{1cm}} & Data, splits, metric aggregation; \S\ref{sec:data}, \S\ref{sec:recognition} & Tue: data; Thu: summary \\
-B: \underline{\hspace{1cm}} & Rules, MLP, GRU; \S\ref{sec:baseline}, \S\ref{sec:recognition} & Tue: initial runs; Thu: final results \\
-C: \underline{\hspace{1cm}} & Causal TCN; \S\ref{sec:tcn} and its results & Wed: validation; Thu: results \\
-D: \underline{\hspace{1cm}} & Raw landmarks, filters, ablations; \S\ref{sec:filter}, \S\ref{sec:ablation} & Mon: recording format; Thu: results \\
-E: \underline{\hspace{1cm}} & Replay, system experiments, integration; \S\ref{sec:system}, \S\ref{sec:discussion} & Thu: experiments; Fri: final report \\
+A: Wang & Data, splits, metric aggregation; \S\ref{sec:data}, \S\ref{sec:recognition} & Tue: data; Thu: summary \\
+B: Issac & Rules, MLP, GRU; \S\ref{sec:baseline}, \S\ref{sec:recognition} & Tue: initial runs; Thu: final results \\
+C: Caleb & Causal TCN; \S\ref{sec:tcn} and its results & Wed: validation; Thu: results \\
+D: Xinyu & Raw landmarks, filters, ablations; \S\ref{sec:filter}, \S\ref{sec:ablation} & Mon: recording format; Thu: results \\
+E: Milo & Replay, system experiments, integration; \S\ref{sec:system}, \S\ref{sec:discussion} & Thu: experiments; Fri: final report \\
 \bottomrule
 \end{tabularx}
 
@@ -221,10 +221,10 @@ smoke-test artifacts, not human-trained models.
 \centering
 \fbox{\begin{minipage}{0.95\linewidth}\centering
 RGB webcam $\rightarrow$ fixed landmarks and hand identity $\rightarrow$ causal features\\[3pt]
-Rules / MLP / GRU $\rightarrow$ shared state machine $\rightarrow$ local UDP\\[3pt]
+Rules / MLP / GRU / causal TCN $\rightarrow$ shared state machine $\rightarrow$ local UDP\\[3pt]
 $\rightarrow$ Blender ray selection, planar deformation, orbit, and brush resize\\[3pt]
 Recorded landmarks $\rightarrow$ the same feature, intent, and control path\\[3pt]
-\textit{Planned comparisons: causal TCN and alternative landmark filters.}
+\textit{The TCN path is implemented; alternative landmark filters remain planned.}
 \end{minipage}}
 \caption{Implemented pipeline and replay fallback. Proposed comparisons are explicitly marked.}
 \label{fig:pipeline}
@@ -276,18 +276,31 @@ not a population-level generalization study.
 {Replace the planned description with actual participant, session, frame, and class counts, durations, and anonymized split membership. If collection falls short, report the actual counts rather than inventing samples.}
 {Tuesday, Oct. 20: ten sessions from five people have been cross-checked, all four classes appear in training, and neither subjects nor adjacent windows leak across partitions.}
 
-\subsection{Causal TCN comparison (planned)}\label{sec:tcn}
-The planned TCN will consume the same 24-frame, 140-dimensional sequence and predict
-the final frame's intent. Residual dilated convolutions will use left padding only;
-normalization must not aggregate future timesteps. The comparison will hold the
-front end, training split, state machine, and evaluation protocol fixed. No TCN
-implementation or measured advantage is claimed at this stage.
+\subsection{Causal TCN comparison (implemented; human evaluation pending)}\label{sec:tcn}
+The implemented TCN consumes the same 24-frame, 140-dimensional sequence as the
+other learned baselines. A $140\rightarrow64$ pointwise projection feeds three
+residual blocks; each block contains two kernel-3 causal convolutions, ReLU, and
+dropout 0.2, with block dilations 1, 2, and 4. Explicit left padding preserves
+sequence length without exposing future timesteps, and the final 64-to-4 linear
+head produces logits at every frame while normal inference uses the last frame
+\citep{bai2018}.
+The network has 83,396 trainable parameters. Tests cover output shape, strict
+causality, checkpoint round trips, checkpoint schema checks, and the 23/24-frame
+online warm-up boundary.
 
-\workitem{M3 | Add a causal TCN; defer the Transformer}
-{C (name to be assigned); depends on A's split and D's shared EMA data. Use the same evaluation scripts as B.}
-{Implement a lightweight TCN and extend model selection and checkpoint validation for train/evaluate/track/replay. The current CLI only supports rules/mlp/gru; a tcn command is not available yet.}
-{Suggested starting point: a 140-to-64 projection, three residual blocks with two causal kernel-3 convolutions each, dilation 1/2/4, ReLU, dropout 0.2, and a four-class linear head on the final timestep. Use left padding only and no normalization across time. Keep the visible history at 24 frames and use B's training budget, three seeds, and warm-up policy. Adjust architecture on validation data only.}
-{Configuration, code version, parameter count, three-seed checkpoints and evaluation results. Check output shapes, checkpoint round trips, invariance of earlier outputs to changes in future inputs, and agreement between batch and online features.}
+A two-epoch synthetic smoke run verified training, evaluation, checkpoint loading,
+and no-preview replay through the controller and UDP path. It obtained test
+Macro-F1 0.922 and zero false or missed controller events on generated data; pure
+CPU model inference was 0.300 ms median (0.304 ms p95, batch 1, window 24, 50 warm-up
+and 200 measured iterations). These values are marked synthetic-smoke-only and are
+excluded from the human comparison tables. The fixed subject split and common EMA
+0.45 data are not yet present, so no human-data advantage is claimed.
+
+\workitem{M3 | Complete the causal TCN experiment; defer the Transformer}
+{C (Caleb); implementation is complete and formal runs depend on A's split and D's shared EMA data. Use the same evaluation scripts as B.}
+{Run the fixed TCN through the formal three-seed protocol. Train/evaluate/track/replay already accept \code{tcn}, and checkpoint validation preserves the existing MLP/GRU format.}
+{Keep the implemented 140-to-64 projection, three residual blocks with two causal kernel-3 convolutions each, dilation 1/2/4, ReLU, dropout 0.2, and the four-class head. Do not tune on test data. Use the same visible history, training budget, shared controller, and EMA 0.45 inputs as the other baselines.}
+{Configuration, code version, parameter count, three-seed checkpoints and evaluation results. Automated preflight rejects synthetic or unverified recordings, subject leakage, incomplete training labels, and a mismatched preprocessing manifest.}
 {Replace the planned description with the final architecture and supporting citation. Complete Tables~\ref{tab:recognition} and~\ref{tab:events}; discuss accuracy alongside parameter count and time, rather than selecting only the highest score.}
 {Basic validation by Wednesday, Oct. 21; results by Thursday, Oct. 22. If unfinished, retain planned status and missing values without blocking the three existing baselines.}
 
@@ -310,19 +323,19 @@ not millimeters without calibration.
 
 \section{Results}
 \subsection{Available implementation evidence}
-The Python regression suite passed all 57 tests in the October 19 audit. Historical
+The Python regression suite passed all 60 tests in the October 20 audit. Historical
 synthetic Blender integration records demonstrate four committed operations
 (two sculpt edits, orbit, and brush resize), undo/redo, and timeout rollback on a
 10,242-vertex mesh. One saved run reports a 16.48 ms median from message transmission
 to application. This excludes camera capture, landmark inference, intent waiting,
-and final display presentation; it is not end-to-end latency. MLP and GRU training,
+and final display presentation; it is not end-to-end latency. MLP, GRU, and TCN training,
 checkpoint loading, and evaluation completed two-epoch synthetic smoke runs. Those
 runs establish pipeline connectivity, not a meaningful ranking of recognition models.
 
 \workitem{R1 | Audit evidence and validate the current version}
 {E (name to be assigned); B checks the model pipeline.}
 {Review automated and Blender integration evidence, recording the date, source version, machine, and configuration.}
-{The 57 tests in the text refer to the current \code{.venv/bin/python -m pytest -q} audit. Historical evidence is in \code{runs/plasticity/v1/gui_test.json}: four operations, 16.479 ms, and 10,242 vertices. It has no source-hash field, so it does not establish that every current change was validated. Synthetic training evidence is in \code{runs/smoke_mlp/} and \code{runs/smoke_gru/}; do not use it in the human comparison tables.}
+{The 60 tests in the text refer to the current \code{.venv/bin/python -m pytest -q} audit. Historical evidence is in \code{runs/plasticity/v1/gui_test.json}: four operations, 16.479 ms, and 10,242 vertices. It has no source-hash field, so it does not establish that every current change was validated. Synthetic training evidence is in \code{runs/smoke_mlp/}, \code{runs/smoke_gru/}, and \code{runs/smoke_tcn/}; do not use it in the human comparison tables.}
 {Current test logs, version, and conditions. Save any new GUI run in a separate directory without overwriting historical records. If illustrating deformation, use an actual Blender screenshot and identify synthetic or human input in the caption.}
 {Update the test date and actual findings here; there is no need to enumerate every software test in the report.}
 {Thursday, Oct. 22: every number is traceable, and historical checks not rerun remain explicitly historical.}
@@ -353,7 +366,7 @@ Method & & Idle & Sculpt & Orbit & Resize & (ms/frame) \\
 Rules & \missing & \missing & \missing & \missing & \missing & \missing \\
 MLP & \missing & \missing & \missing & \missing & \missing & \missing \\
 GRU & \missing & \missing & \missing & \missing & \missing & \missing \\
-TCN (planned) & \missing & \missing & \missing & \missing & \missing & \missing \\
+TCN & \missing & \missing & \missing & \missing & \missing & \missing \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -370,7 +383,7 @@ Method & False ops/min & Misses & Early releases & Onset (ms) & Offset (ms) \\
 Rules & \missing & \missing & \missing & \missing & \missing \\
 MLP & \missing & \missing & \missing & \missing & \missing \\
 GRU & \missing & \missing & \missing & \missing & \missing \\
-TCN (planned) & \missing & \missing & \missing & \missing & \missing \\
+TCN & \missing & \missing & \missing & \missing & \missing \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -476,9 +489,11 @@ dataset, latency accumulated across perception and arbitration, and uncalibrated
 Our intermediate goals respond directly to these risks: (1) replay verified recordings
 through the existing baselines; (2) compare a causal TCN and filtering under fixed
 conditions; and (3) validate real-camera interaction and stability. Recorded-landmark
-replay remains the fallback when live capture is unreliable. The proposed TCN is a
-controlled architectural comparison, not evidence that pretraining is available or
-that a more complex model will necessarily outperform a GRU.
+replay remains the fallback when live capture is unreliable. The implemented TCN is
+a controlled architectural comparison, not evidence that pretraining is available
+or that a more complex model will necessarily outperform a GRU. Its synthetic smoke
+result verifies plumbing only; model comparisons remain unmeasured until the frozen
+human split and common preprocessing are available.
 
 Public-data pretraining, prototype adaptation at 1/5/10 shots, and calibrated depth
 remain future work. Public gesture labels must be reconciled with editor semantics,
@@ -500,7 +515,7 @@ the baselines can be concluded.
 \ifdraftnotes
 \begin{tcolorbox}[title={Submission checklist | Visible in the working draft only}]
 \textbf{Ownership and evidence}\par
-$\square$ Assign names to A--E. These are planned roles; write any required contribution statement separately from actual completed work.\par
+$\square$ Confirm the A--E role assignments. These are planned roles; write any required contribution statement separately from actual completed work.\par
 $\square$ Everyone has recorded two sessions and cross-checked labels. A has saved the anonymized subject split and checked for leakage.\par
 $\square$ Tables contain measured values; unfinished entries explicitly say unmeasured, and \missing{} is never treated as zero.\par
 $\square$ Models, filters, recordings, hardware, and source versions are traceable. Synthetic weights and historical logs are not presented as current human results.\par

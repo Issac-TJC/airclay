@@ -1,5 +1,6 @@
 {
   "fps": 30, "window": 24, "hidden": 128, "layers": 2,
+  "tcn_channels": 64, "tcn_kernel_size": 3, "tcn_dilations": [1, 2, 4],
   "dropout": 0.2, "lr": 0.001, "batch_size": 64,
   "epochs": 50, "patience": 8, "seed": 42, "device": "cpu"
 }

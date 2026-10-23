@@ -1,5 +1,7 @@
 import json
+import platform
 import random
+import subprocess
 from pathlib import Path
 import numpy as np
 import torch
@@ -9,6 +11,20 @@ from airclay.config import ROOT
 from airclay.data_tools.dataset import Windows, validate_split
 from .features import LABELS, FEATURE_VERSION, FEATURE_DIM
 from .models import make_model
+
+
+def source_info():
+    try:
+        revision = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, capture_output=True, text=True
+        ).stdout.strip()
+        dirty = bool(subprocess.run(
+            ["git", "status", "--porcelain"], cwd=ROOT, check=True, capture_output=True, text=True
+        ).stdout.strip())
+    except (OSError, subprocess.CalledProcessError):
+        revision, dirty = None, None
+    return {"git_revision": revision, "git_dirty": dirty,
+            "python": platform.python_version(), "platform": platform.platform()}
 
 
 def train(args):
@@ -39,6 +55,9 @@ def train(args):
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     (out / "split.json").write_text(json.dumps(split, indent=2))
+    (out / "config.json").write_text(json.dumps({"kind": args.model, **cfg}, indent=2))
+    source = source_info()
+    (out / "source.json").write_text(json.dumps(source, indent=2))
     log, best, stale = [], -1, 0
     for epoch in range(cfg["epochs"]):
         model.train()
@@ -66,6 +85,7 @@ def train(args):
             torch.save({"kind": args.model, "config": cfg, "feature_version": FEATURE_VERSION,
                         "feature_dim": FEATURE_DIM, "labels": LABELS,
                         "state_dict": {k: v.cpu() for k, v in model.state_dict().items()},
+                        "source": source,
                         "synthetic_smoke_only": args.allow_synthetic, "val_macro_f1": score}, out / "best.pt")
         else:
             stale += 1

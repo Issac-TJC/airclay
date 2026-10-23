@@ -14,7 +14,7 @@ behavior, not recognition accuracy or calibrated depth.
 - [x] Two-hand landmark tracking with handedness/wrist matching and configurable EMA.
 - [x] Original camera orientation (`mirrored=false`), stable fingertip IDs, and Left-blue/Right-orange markers.
 - [x] Causal resampling and common feature extraction for learning and inference.
-- [x] Rules, single-frame MLP, and 24-frame GRU intent backends.
+- [x] Rules, single-frame MLP, 24-frame GRU, and strictly causal 24-frame TCN intent backends.
 - [x] Exclusive v1 controller with neutral re-arming, onset arbitration, mode locking, loss pause, and rollback.
 - [x] Surface ray selection, geodesic brush weights, planar sculpting, view orbit, and brush resize.
 - [x] Thirty-operation AirClay undo/redo history and timeout rollback.
@@ -142,8 +142,10 @@ fallback state, anchor information, and timing by stage.
 - [ ] Report per-class and macro metrics, continuous-operation errors, rejection,
   latency, and variation across users and seeds; exclude synthetic smoke results.
 
-The midterm TCN and filter comparisons are separate near-term tasks. They do not
-establish public-data pretraining, few-shot learning, or calibrated depth.
+The midterm TCN implementation is complete, including checkpoint validation, causal
+output tests, CPU profiling, and a three-seed experiment runner. Human TCN training
+and the filter comparison remain near-term tasks. They do not establish public-data
+pretraining, few-shot learning, or calibrated depth.
 
 ### M6: Final delivery
 
