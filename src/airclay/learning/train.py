@@ -35,9 +35,16 @@ def train(args):
     random.seed(cfg["seed"])
     np.random.seed(cfg["seed"])
     torch.manual_seed(cfg["seed"])
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(cfg["seed"])
     torch.set_num_threads(2)
     if cfg["device"] == "mps" and not torch.backends.mps.is_available():
         raise ValueError("MPS is not available; use --device cpu")
+    if cfg["device"] == "cuda" and not torch.cuda.is_available():
+        raise ValueError("CUDA is not available; use --device cpu")
+    if cfg["device"] == "cuda":
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
     split = json.loads(Path(args.split).read_text())
     validate_split(split)
     train_data = Windows(split["recordings"]["train"], cfg, stride=3, allow_synthetic=args.allow_synthetic)

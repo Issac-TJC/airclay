@@ -185,6 +185,7 @@ manifest with `filter`, `alpha`, and recording paths is also accepted:
 .venv/bin/python scripts/run_tcn_midterm.py \
   --split data/split.json \
   --preprocessing-manifest data/processed/airclay-v2-ema/derived_manifest.json \
+  --device cuda \
   --output runs/midterm/tcn
 ```
 

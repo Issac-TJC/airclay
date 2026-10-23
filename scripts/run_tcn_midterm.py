@@ -132,6 +132,7 @@ def main():
     parser.add_argument("--split", type=Path, required=True)
     parser.add_argument("--preprocessing-manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=ROOT / "runs/midterm/tcn")
+    parser.add_argument("--device", choices=("cpu", "cuda", "mps"), default="cpu")
     args = parser.parse_args()
     args.split, args.preprocessing_manifest = args.split.resolve(), args.preprocessing_manifest.resolve()
     if not args.split.is_file() or not args.preprocessing_manifest.is_file():
@@ -151,14 +152,15 @@ def main():
                 "preprocessing": preprocessing, "training_window_counts": counts,
                 "source": git_state(), "python": platform.python_version(),
                 "platform": platform.platform(),
-                "config": json.loads((ROOT / "configs/train.json").read_text())}
+                "config": {**json.loads((ROOT / "configs/train.json").read_text()),
+                           "device": args.device}}
     (args.output / "experiment_manifest.json").write_text(json.dumps(manifest, indent=2))
 
     # Freeze the implementation/configuration before any test-partition evaluation.
     for seed in SEEDS:
         run = args.output / f"seed{seed}"
         invoke("train", "--model", "tcn", "--split", args.split, "--output", run,
-               "--epochs", "50", "--seed", str(seed), "--device", "cpu")
+               "--epochs", "50", "--seed", str(seed), "--device", args.device)
     for seed in SEEDS:
         run = args.output / f"seed{seed}"
         invoke("evaluate", "--backend", "tcn", "--checkpoint", run / "best.pt",

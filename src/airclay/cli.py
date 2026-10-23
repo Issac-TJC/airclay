@@ -53,7 +53,7 @@ def main():
     p.add_argument("--output", required=True)
     p.add_argument("--epochs", type=int)
     p.add_argument("--seed", type=int)
-    p.add_argument("--device", choices=["cpu","mps"])
+    p.add_argument("--device", choices=["cpu","cuda","mps"])
     p.add_argument("--allow-synthetic", action="store_true")
     p = sub.add_parser("evaluate")
     p.add_argument("--backend", choices=["rules","mlp","gru","tcn"], required=True)
